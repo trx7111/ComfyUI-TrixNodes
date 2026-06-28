@@ -60,14 +60,12 @@
 Ниже представлены интерактивные демонстрации работы нод и анимаций связей в реальных сценариях:
 
 ### Демонстрация удаленного управления и навигации:
-Нажмите на изображение ниже, чтобы посмотреть видеоролик с демонстрацией удаленного переключения нод, групп и фокуса камеры:
 
-[![Смотреть демо байпассера](assets/1.jpg)](https://github.com/trx7111/ComfyUI-TrixNodes/blob/main/assets/example_bypass.mp4)
+https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4
 
 ### Демонстрация анимаций связей WLinks:
-Нажмите на изображение ниже, чтобы посмотреть видеоролик с демонстрацией скрытия связей и динамического проявления светящихся линий:
 
-[![Смотреть демо WLinks](assets/6.jpg)](https://github.com/trx7111/ComfyUI-TrixNodes/blob/main/assets/example_w_links.mp4)
+https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_w_links.mp4
 
 ---
 

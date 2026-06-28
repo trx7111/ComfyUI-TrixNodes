@@ -60,14 +60,12 @@ If a target node's ID is lost or disconnected, the node displays a smart warning
 Below are interactive video walkthroughs showing the nodes and animations in real-world application:
 
 ### Remote Control & Navigation Walkthrough:
-Click the image below to watch the video demonstration of remote node control, multi-selection toggles, and instant eye-navigation:
 
-[![Watch Bypasser Demo](assets/1.jpg)](https://github.com/trx7111/ComfyUI-TrixNodes/blob/main/assets/example_bypass.mp4)
+https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4
 
 ### Animated Connections & WLinks Walkthrough:
-Click the image below to watch the video demonstration of right-click wire hiding and dynamic on-hover glowing guides:
 
-[![Watch WLinks Demo](assets/6.jpg)](https://github.com/trx7111/ComfyUI-TrixNodes/blob/main/assets/example_w_links.mp4)
+https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_w_links.mp4
 
 ---
 
