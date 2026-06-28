@@ -61,11 +61,19 @@
 
 ### Демонстрация удаленного управления и навигации:
 
-https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4
+
+
+https://github.com/user-attachments/assets/4f7bda73-11b7-4b22-b691-83880091b7df
+
+
 
 ### Демонстрация анимаций связей WLinks:
 
-https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_w_links.mp4
+
+
+https://github.com/user-attachments/assets/199bd3e8-db94-4703-8434-e10c57ad4910
+
+
 
 ---
 
