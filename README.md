@@ -2,123 +2,112 @@
 
 [![English](https://img.shields.io/badge/Language-English-blue?style=for-the-badge)](README.md) [![Русский](https://img.shields.io/badge/Язык-Русский-red?style=for-the-badge)](README_RU.md)
 
-An elegant, premium, high-performance suite of workflow management nodes for [ComfyUI](https://github.com/comfyanonymous/ComfyUI). Organize complex workflows, bypass/mute nodes and groups remotely, navigate instantly across your canvas, and declutter "spaghetti" wires with gorgeous, GPU-optimized connection animations.
-
-![ComfyUI-TrixNodes Overview](assets/workflow_overview.jpg)
+An elegant, premium, high-performance workflow management node suite for [ComfyUI](https://github.com/comfyanonymous/ComfyUI). Organize complex workflows, remotely bypass or mute nodes and groups, navigate instantly across your canvas, and declutter connection wires with beautiful, GPU-optimized animations.
 
 ---
 
 ## 📌 Table of Contents
 1. [🌟 Core Features](#-core-features)
-2. [📦 Included Nodes](#-included-nodes)
-   - [🎛️ Trix Bypass Nodes w Groups by ID](#️-trix-bypass-nodes-w-groups-by-id)
-   - [🎚️ Trix Bypass Nodes by ID](#️-trix-bypass-nodes-by-id)
-3. [🔌 Visual Wire Management (WLinks)](#-visual-wire-management-wlinks)
-4. [⚖️ Comparison with Standard Nodes](#️-comparison-with-standard-nodes)
-5. [⚙️ Global Settings](#️-global-settings)
-6. [🛠️ Installation](#️-installation)
+2. [🎛️ Nodes Overview](#️-nodes-overview)
+3. [🔌 Visual Connection Control (WLinks)](#-visual-connection-control-wlinks)
+4. [⚙️ Global settings](#️-global-settings)
+5. [⚖️ Comparison & Pros](#️-comparison--pros)
+6. [🛠️ Installation](#-installation)
 
 ---
 
 ## 🌟 Core Features
 
-- **Consolidated Control Deck**: Manage multiple nodes and custom groups remotely from a single elegant interface.
-- **Instant Canvas Navigation**: Click the eye icon `👁` next to any target or group to center the camera view on it instantly.
-- **Hidden Connection Wires (WLinks)**: Hide selected connection lines to eliminate wire clutter ("spaghetti"), while retaining dynamic on-hover or on-click animated guides.
-- **Bilingual & Premium UI**: Clean dark-mode cards with zero-configuration toggles, tab groups, delete controls, and a fully polished aesthetic.
-- **Customizable Wire Animations**: Multiple animation styles (Pulsation, Neon Plasma, Wave Warping) operating at low resource levels (15 FPS) or buttery smooth framerates (60+ FPS / native monitor Hz).
+- **Unified Control Cards**: Remotely toggle bypass/mute states for nodes and groups.
+- **Instant Camera Navigation**: Click the `👁` eye button to immediately center your screen on the target nodes.
+- **Hidden Connection Wires (WLinks)**: Hide connection wires via right-click to declutter the canvas. They reappear dynamically on hover or click with glowing particle animations.
+- **GPU Performance Switch**: Toggle between energy-saving (15 FPS) and high-performance native refresh rate (60+ FPS) animations.
 
 ---
 
-## 📦 Included Nodes
+## 🎛️ Nodes Overview
 
-### 🎛️ Trix Bypass Nodes w Groups by ID
+### 1. Trix Bypass Nodes w Groups by ID
+A grouped remote bypass control node. Allows category grouping (e.g. `[A] Group`, `[B] Group B`), group collapsing, and single/multi selection modes.
 
-Allows you to group node targets under custom group categories (e.g. `[A] Group`, `[B] Group B`). You can toggle bypass/mute states for the entire group at once or control individual target nodes inside them.
+![Bypasser w Groups](assets/1.jpg)
 
-![Bypasser w Groups Node](assets/node_main.jpg)
+### 2. Trix Bypass Nodes by ID
+A linear control node showing a direct list of target nodes. Ideal for quick remote toggling of generators, loaders, or savers.
 
-#### Node Features:
-* **Single / Multi Select**: Quickly switch between toggling a single group at a time (muting all other groups) or controlling multiple groups independently.
-- **Add / Remove Targets**: Simply input node IDs or drag to append targets dynamically. Use the delete mode (`✕` button) to clean up targets.
-- **Group Collapsing**: Collapse group headers to keep your control node compact.
+![Bypasser Simple](assets/2.jpg)
 
----
+#### Remote Control and Navigation Demo:
+Watch how easily you can bypass nodes and focus the viewport:
 
-### 🎚️ Trix Bypass Nodes by ID
-
-A streamlined, linear control node that displays a flat list of target nodes without grouping. Ideal for quick remote control of key generators, loaders, or savers in your workflow.
-
-![Bypasser Simple Node](assets/node_simple.jpg)
-
-#### Interactive Video Walkthrough:
-Below is a video demonstrating remote node control, multi-selection toggles, and instant eye-navigation:
-
-<video src="assets/example_bypass.mp4" controls width="100%"></video>
+<video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4" width="100%" controls></video>
 
 ---
 
-## 🔌 Visual Wire Management (WLinks)
+## 🔌 Visual Connection Control (WLinks)
 
-WLinks is an integrated extension that cleans up your ComfyUI workspace. You can selectively hide wire connections for specific nodes and have them reappear with smooth glowing animations when needed.
+WLinks lets you selectively clean up wire spaghetti.
 
-| Context Menu Hide Links | Glowing Wire Animations |
-| :---: | :---: |
-| ![Context Menu](assets/context_menu.jpg) | ![Animated Wires](assets/animation_glow.jpg) |
+### 1. Selective Hiding
+Right-click any node and select `🌊 Trix Hide Links` to hide all its input/output wires.
 
-#### Features:
-* **Right-Click Hide**: Right-click any node and select `🌊 Trix Hide Links` to hide all its input/output wires.
-- **Dynamic Reveal**: Hover over or click on nodes to temporarily reveal their hidden connections.
-- **Customizable Indicators**: Customize the shapes (Dashed Circle, Circle, Triangle, WiFi Icon) and colors of input/output slot indicators.
+![Right Click Hide](assets/3.jpg)
 
-#### Slot Shapes & Indicators:
-![Slot Shapes & Indicators](assets/slot_shapes.jpg)
+### 2. Dynamic Hover Reveal
+Hovering or clicking on a node shows its hidden connections temporarily.
 
-#### Animated Connections Video:
-Watch the wire animation style and dynamic on-hover guides in action:
+![Hover Reveal](assets/4.jpg)
 
-<video src="assets/example_w_links.mp4" controls width="100%"></video>
+### 3. Glow Wire Animations
+Customize connection guides with smooth glowing particle flows.
 
----
+![Glow Wires](assets/5.jpg)
 
-## ⚖️ Comparison with Standard Nodes
+### 4. Customizable Slot Indicators
+Choose shapes (WiFi Icon, Circle, Dashed Circle, Triangle) and color schemes.
 
-| Feature | Standard ComfyUI Nodes | TrixNodes Suite |
-| :--- | :---: | :---: |
-| **Control UI** | Bulky, manual, scattered toggles | Sleek, unified dark-mode deck |
-| **Target Management** | Static, hard to change | Dynamic adding/deleting inline |
-| **Viewport Navigation** | Manual panning and scrolling | Instant centering with `👁` button |
-| **Wire Management** | Global binary visibility (All or None) | Selective hidden wires (WLinks) |
-| **Interactive Wires** | Static, non-responsive lines | Dynamic animations on hover/click |
-| **Performance Tuning** | Fixed redraw rates | GPU-optimized dual framerates (15 / 60+ Hz) |
+![Slot Indicators](assets/6.jpg)
+
+#### WLinks Animation Demo:
+Watch the wire animation styles and hover guides in action:
+
+<video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_w_links.mp4" width="100%" controls></video>
 
 ---
 
-## ⚙️ Global Settings
+## ⚙️ Global settings
 
-Configure preferences globally via the ComfyUI settings dialog under the **`Trix Nodes`** tab:
+Configure settings globally via ComfyUI Settings under the **`Trix Nodes`** tab:
 
-![Settings Panel](assets/settings_panel.jpg)
+![Settings Panel 1](assets/7.jpg)
 
-- **Slot Indicator Shape**: Choose from `Dashed Circle`, `Circle`, `Triangle`, or `WiFi Icon`.
-- **Color Mode**: Customize wire colors (`Match Slot Color` or neon presets).
-- **Animation Style**: Select animation styles (`Pulsation (Pulse)`, `Color Flow`, `Jelly/Water Wave Warping`, `Neon Plasma Flow`, `Sparkling Electricity`, `Floating Particles`, or `Static`).
-- **Wire Display Mode**: Set when hidden wires should show (`Hide Always`, `Show on Click / Selection`, or `Show on Hover`).
-- **Smooth animations (GPU-heavy)**:
-  - **OFF (Default)**: Restricts animations to 15 FPS to conserve CPU/GPU resources.
-  - **ON**: Runs animations at a buttery smooth 60 FPS or native monitor refresh rate.
-- **Context Menu Toggle Switches**: Enable or disable custom right-click items (`Show/Hide Bypasser controls`, `Copy Node ID`, `Copy Selected Node IDs`, and `Show/Hide links`).
+![Settings Panel 2](assets/8.jpg)
+
+- **Slot Indicator Shape**: WiFi Icon, Circle, Dashed Circle, or Triangle.
+- **Color Mode**: Match Slot Color or neon presets.
+- **Animation Style**: Pulsation, Color Flow, Jelly Wave, Neon Plasma, Spark, Particles, or Static.
+- **Wire Display Mode**: Hide Always, Show on Click, or Show on Hover.
+- **Smooth animations (GPU-heavy)**: Toggle between low GPU usage (15 FPS) and native monitor refresh rate (60+ Hz).
+- **Context Menu Toggle Switches**: Toggle visibility of right-click items (`Show/Hide Bypasser controls`, `Copy Node ID`, `Copy Selected Node IDs`, and `Show/Hide links`).
+
+---
+
+## ⚖️ Comparison & Pros
+
+- **Clean Canvas**: Replaces the standard ComfyUI spaghetti wires with responsive, on-demand visual links.
+- **Instant Focus**: Centering nodes with the eye button is much faster than manually searching through massive workflows.
+- **Flexible Muting**: Toggle individual nodes, single groups, or multiple groups from a single node placed anywhere.
 
 ---
 
 ## 🛠️ Installation
 
-1. Navigate to your ComfyUI custom nodes directory:
+1. Open your terminal in the custom nodes directory:
    ```bash
    cd ComfyUI/custom_nodes/
    ```
-2. Clone the repository:
+2. Clone this repository:
    ```bash
-   git clone https://github.com/pixaroma/ComfyUI-TrixNodes.git TrixNodes
+   git clone https://github.com/pixaroma/ComfyUI-TrixNodes.git
    ```
-3. Restart ComfyUI and refresh your browser.
+3. Restart ComfyUI and refresh the page.
