@@ -61,11 +61,19 @@ Below are interactive video walkthroughs showing the nodes and animations in rea
 
 ### Remote Control & Navigation Walkthrough:
 
-https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4
+
+
+https://github.com/user-attachments/assets/94c87505-834d-490c-9dd2-0dbb3939eab4
+
+
 
 ### Animated Connections & WLinks Walkthrough:
 
-https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_w_links.mp4
+
+
+https://github.com/user-attachments/assets/d48afabc-fd94-458b-841e-f1e1efa07974
+
+
 
 ---
 
