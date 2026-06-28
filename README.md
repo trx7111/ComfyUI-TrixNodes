@@ -8,87 +8,90 @@ An elegant, premium, high-performance workflow management node suite for [ComfyU
 
 ## 📌 Table of Contents
 1. [🌟 Core Features](#-core-features)
-2. [🎛️ Nodes Overview](#️-nodes-overview)
-3. [🔌 Visual Connection Control (WLinks)](#-visual-connection-control-wlinks)
-4. [⚙️ Global settings](#️-global-settings)
-5. [⚖️ Comparison & Pros](#️-comparison--pros)
-6. [🛠️ Installation](#-installation)
+2. [📦 Nodes Overview](#-nodes-overview)
+3. [🎥 Visual Demonstration](#-visual-demonstration)
+4. [🔌 Wire Management & Hidden Links (WLinks)](#-wire-management--hidden-links-wlinks)
+5. [⚙️ Global Settings](#️-global-settings)
+6. [⚖️ Comparison & Pros](#️-comparison--pros)
+7. [🛠️ Installation](#-installation)
 
 ---
 
 ## 🌟 Core Features
 
 - **Unified Control Cards**: Remotely toggle bypass/mute states for nodes and groups.
-- **Instant Camera Navigation**: Click the `👁` eye button to immediately center your screen on the target nodes.
+- **Instant Canvas Navigation**: Click the `👁` eye button to immediately center your screen on the target nodes.
 - **Hidden Connection Wires (WLinks)**: Hide connection wires via right-click to declutter the canvas. They reappear dynamically on hover or click with glowing particle animations.
 - **GPU Performance Switch**: Toggle between energy-saving (15 FPS) and high-performance native refresh rate (60+ FPS) animations.
 
 ---
 
-## 🎛️ Nodes Overview
+## 📦 Nodes Overview
 
-### 1. Trix Bypass Nodes w Groups by ID
-A grouped remote bypass control node. Allows category grouping (e.g. `[A] Group`, `[B] Group B`), group collapsing, and single/multi selection modes.
+### 1. Visual Representation of the Nodes
+The package includes two main bypasser nodes: `Trix Bypass Nodes w Groups by ID` (with group grouping and collapsible decks) and `Trix Bypass Nodes by ID` (streamlined linear list).
 
-![Bypasser w Groups](assets/1.jpg)
+![Bypassers Overview](assets/1.jpg)
 
-### 2. Trix Bypass Nodes by ID
-A linear control node showing a direct list of target nodes. Ideal for quick remote toggling of generators, loaders, or savers.
+### 2. Collapsible Layout (Show/Hide Controls)
+You can toggle showing or hiding control buttons directly on the node layout to make the visual interface simpler and cleaner.
 
-![Bypasser Simple](assets/2.jpg)
+![Simplified Node Layout](assets/2.jpg)
 
-#### Remote Control and Navigation Demo:
-Watch how easily you can bypass nodes and focus the viewport:
+### 3. Add Targets Submenu
+Double-click or click **Add C** to open the custom submenu popup where you can easily search and pick nodes to target.
 
-<video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4" width="100%" controls></video>
+![Picker Submenu](assets/3.jpg)
+
+### 4. Configured Targets and IDs
+Once targets are added, they are listed inside the picker submenu with their corresponding names and IDs.
+
+![Configured Target List](assets/4.jpg)
+
+### 5. Smart Connection Recovery
+If a target node's ID is lost or disconnected, the node displays a smart warning indicator (`⚠️`). Clicking it opens a recovery modal to easily repair the connection.
+
+![Connection Recovery](assets/5.jpg)
 
 ---
 
-## 🔌 Visual Connection Control (WLinks)
+## 🎥 Visual Demonstration
 
-WLinks lets you selectively clean up wire spaghetti.
+Below are interactive video walkthroughs showing the nodes and animations in real-world application:
 
-### 1. Selective Hiding
-Right-click any node and select `🌊 Trix Hide Links` to hide all its input/output wires.
+### Remote Control & Navigation Walkthrough:
+Demonstrates remote node bypassing, group toggles, and viewport eye-focusing:
 
-![Right Click Hide](assets/3.jpg)
+<video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4" width="100%" controls></video>
 
-### 2. Dynamic Hover Reveal
-Hovering or clicking on a node shows its hidden connections temporarily.
-
-![Hover Reveal](assets/4.jpg)
-
-### 3. Glow Wire Animations
-Customize connection guides with smooth glowing particle flows.
-
-![Glow Wires](assets/5.jpg)
-
-### 4. Customizable Slot Indicators
-Choose shapes (WiFi Icon, Circle, Dashed Circle, Triangle) and color schemes.
-
-![Slot Indicators](assets/6.jpg)
-
-#### WLinks Animation Demo:
-Watch the wire animation styles and hover guides in action:
+### Animated Connections & WLinks Walkthrough:
+Demonstrates right-click wire hiding and dynamic on-hover glowing guides:
 
 <video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_w_links.mp4" width="100%" controls></video>
 
 ---
 
-## ⚙️ Global settings
+## 🔌 Wire Management & Hidden Links (WLinks)
 
-Configure settings globally via ComfyUI Settings under the **`Trix Nodes`** tab:
+WLinks lets you selectively clean up wire spaghetti by hiding connections, rendering them dynamically with animations when you interact with the nodes.
 
-![Settings Panel 1](assets/7.jpg)
+### 1. Animated Invisible Links
+Once connections are hidden via right-click `🌊 Trix Hide Links`, they render with smooth glowing particle flows on hover or selection.
 
-![Settings Panel 2](assets/8.jpg)
+![Hidden Wires Overview](assets/6.jpg)
 
-- **Slot Indicator Shape**: WiFi Icon, Circle, Dashed Circle, or Triangle.
-- **Color Mode**: Match Slot Color or neon presets.
-- **Animation Style**: Pulsation, Color Flow, Jelly Wave, Neon Plasma, Spark, Particles, or Static.
-- **Wire Display Mode**: Hide Always, Show on Click, or Show on Hover.
-- **Smooth animations (GPU-heavy)**: Toggle between low GPU usage (15 FPS) and native monitor refresh rate (60+ Hz).
-- **Context Menu Toggle Switches**: Toggle visibility of right-click items (`Show/Hide Bypasser controls`, `Copy Node ID`, `Copy Selected Node IDs`, and `Show/Hide links`).
+### 2. Close-up View of Glowing Wires
+A close-up view showing the animated particles, custom slot indicator shapes, and slot colors.
+
+![Hidden Wires Close Up](assets/7.jpg)
+
+---
+
+## ⚙️ Global Settings
+
+Configure your preferences globally in the ComfyUI Settings panel under the **`Trix Nodes`** tab. You can customize slot indicator shapes, neon color schemes, animation styles, display modes, FPS throttling limits, or toggle context menu right-click options.
+
+![Settings Panel](assets/8.jpg)
 
 ---
 
