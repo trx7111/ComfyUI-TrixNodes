@@ -62,12 +62,12 @@
 ### Демонстрация удаленного управления и навигации:
 Показывает удаленное переключение нод, групп и фокус камеры по клику на глаз:
 
-<video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4" width="100%" controls></video>
+![Демонстрация удаленного управления и навигации](assets/example_bypass.mp4)
 
 ### Демонстрация анимаций связей WLinks:
 Показывает скрытие связей через меню и динамическую отрисовку светящихся линий при наведении:
 
-<video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_w_links.mp4" width="100%" controls></video>
+![Демонстрация анимаций связей WLinks](assets/example_w_links.mp4)
 
 ---
 

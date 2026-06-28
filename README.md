@@ -62,12 +62,12 @@ Below are interactive video walkthroughs showing the nodes and animations in rea
 ### Remote Control & Navigation Walkthrough:
 Demonstrates remote node bypassing, group toggles, and viewport eye-focusing:
 
-<video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_bypass.mp4" width="100%" controls></video>
+![Remote Control & Navigation Walkthrough](assets/example_bypass.mp4)
 
 ### Animated Connections & WLinks Walkthrough:
 Demonstrates right-click wire hiding and dynamic on-hover glowing guides:
 
-<video src="https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/example_w_links.mp4" width="100%" controls></video>
+![Animated Connections & WLinks Walkthrough](assets/example_w_links.mp4)
 
 ---
 
