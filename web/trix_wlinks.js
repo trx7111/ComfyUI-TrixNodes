@@ -1229,41 +1229,41 @@ app.registerExtension({
                             if (linkId != null) {
                                 options.push({
                                     content: "Disconnect Links",
-                                    callback: () => {
-                                        this.disconnectInput(slotIndex);
-                                    }
+                                    slot: slot
                                 });
                             }
                             options.push({
                                 content: "Rename Slot",
-                                callback: () => {
-                                    const name = prompt("Slot name", (this.inputs[slotIndex] && this.inputs[slotIndex].name) || "");
-                                    if (name && this.inputs[slotIndex]) {
-                                        this.inputs[slotIndex].name = name;
-                                        if (this.setDirtyCanvas) this.setDirtyCanvas(true, true);
-                                    }
-                                }
+                                slot: slot
                             });
+                            if (this.inputs[slotIndex] && this.inputs[slotIndex].removable) {
+                                options.push(null);
+                                options.push({
+                                    content: "Remove Slot",
+                                    slot: slot,
+                                    className: "danger"
+                                });
+                            }
                         } else {
                             const linkIds = this.outputs[slotIndex] ? this.outputs[slotIndex].links : null;
                             if (linkIds && linkIds.length > 0) {
                                 options.push({
                                     content: "Disconnect Links",
-                                    callback: () => {
-                                        this.disconnectOutput(slotIndex);
-                                    }
+                                    slot: slot
                                 });
                             }
                             options.push({
                                 content: "Rename Slot",
-                                callback: () => {
-                                    const name = prompt("Slot name", (this.outputs[slotIndex] && this.outputs[slotIndex].name) || "");
-                                    if (name && this.outputs[slotIndex]) {
-                                        this.outputs[slotIndex].name = name;
-                                        if (this.setDirtyCanvas) this.setDirtyCanvas(true, true);
-                                    }
-                                }
+                                slot: slot
                             });
+                            if (this.outputs[slotIndex] && this.outputs[slotIndex].removable) {
+                                options.push(null);
+                                options.push({
+                                    content: "Remove Slot",
+                                    slot: slot,
+                                    className: "danger"
+                                });
+                            }
                         }
                     }
                     
