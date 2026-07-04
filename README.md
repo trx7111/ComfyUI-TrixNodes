@@ -111,6 +111,14 @@ Configure your preferences globally in the ComfyUI Settings panel under the **`T
 
 ## 🛠️ Installation
 
+### Option 1: Via ComfyUI Manager (Recommended)
+1. Open the **ComfyUI Manager** in your ComfyUI interface.
+2. Click on **Custom Nodes Manager**.
+3. Search for `ComfyUI-TrixNodes` (or search by publisher `trix7111`).
+4. Click **Install**.
+5. Restart ComfyUI.
+
+### Option 2: Manual Installation (Git Clone)
 1. Open your terminal in the custom nodes directory:
    ```bash
    cd ComfyUI/custom_nodes/
