@@ -39,25 +39,34 @@ function getAnimStyle(settingVal) {
         "Neon Plasma Flow": "plasma",
         "Sparkling Electricity": "spark",
         "Floating Particles": "particles",
+        "Dashed Scrolling Line (Dash)": "dashed",
+        "DNA Helix Spiral": "dna",
+        "Dripping Lava (Glow)": "lava",
+        "Water Pipe Flow (Bulge)": "pipe",
         "Static (No Animation)": "static"
     };
     return map[settingVal] || "pulse";
 }
 
 function getShowMode(settingVal) {
-    const map = {
-        "Hide Always": "none",
-        "Show on Click / Selection": "click",
-        "Show on Hover": "hover"
-    };
-    return map[settingVal] || "none";
+    if (!settingVal) return "none";
+    if (settingVal.includes("Click")) return "click";
+    if (settingVal.includes("Hover")) return "hover";
+    return "none";
 }
 
 // Helper to check if a link should be hidden
 function isLinkHidden(link, graph) {
     if (!link) return false;
-    const originNode = graph.getNodeById(link.origin_id);
-    const targetNode = graph.getNodeById(link.target_id);
+    
+    // Safely extract properties for both object and array format of links
+    const originId = link.origin_id !== undefined ? link.origin_id : link[1];
+    const originSlot = link.origin_slot !== undefined ? link.origin_slot : link[2];
+    const targetId = link.target_id !== undefined ? link.target_id : link[3];
+    const targetSlot = link.target_slot !== undefined ? link.target_slot : link[4];
+    
+    const originNode = graph.getNodeById(originId);
+    const targetNode = graph.getNodeById(targetId);
     
     const originHidden = originNode && originNode.properties && originNode.properties.trix_wlinks_hidden === true;
     const targetHidden = targetNode && targetNode.properties && targetNode.properties.trix_wlinks_hidden === true;
@@ -69,17 +78,39 @@ function isLinkHidden(link, graph) {
     if (originHidden && targetShown) {
         const originTime = (originNode.properties && originNode.properties.trix_wlinks_updated) || 0;
         const targetTime = (targetNode.properties && targetNode.properties.trix_wlinks_updated) || 0;
-        return originTime > targetTime; // Hide if origin hide clicked after target show
-    }
-    if (targetHidden && originShown) {
+        if (originTime > targetTime) {
+            return true;
+        }
+    } else if (targetHidden && originShown) {
         const originTime = (originNode.properties && originNode.properties.trix_wlinks_updated) || 0;
         const targetTime = (targetNode.properties && targetNode.properties.trix_wlinks_updated) || 0;
-        return targetTime > originTime; // Hide if target hide clicked after origin show
+        if (targetTime > originTime) {
+            return true;
+        }
+    } else if (originHidden || targetHidden) {
+        return true;
     }
     
-    // Default: hide if either node wants to hide its links (trix_wlinks_hidden === true)
-    if (originHidden || targetHidden) {
-        return true;
+    // Check if the specific slot is hidden on origin or target using string matching, avoiding matching invalid/undefined slots
+    if (originSlot !== undefined && originSlot !== null && originSlot !== -1 && String(originSlot) !== "undefined" && String(originSlot) !== "null" && !isNaN(Number(originSlot))) {
+        if (originNode && originNode.properties && originNode.properties.trix_hidden_outputs) {
+            const cleanOutputs = (originNode.properties.trix_hidden_outputs || [])
+                .map(Number)
+                .filter(idx => !isNaN(idx) && idx !== -1);
+            if (cleanOutputs.map(String).includes(String(originSlot))) {
+                return true;
+            }
+        }
+    }
+    if (targetSlot !== undefined && targetSlot !== null && targetSlot !== -1 && String(targetSlot) !== "undefined" && String(targetSlot) !== "null" && !isNaN(Number(targetSlot))) {
+        if (targetNode && targetNode.properties && targetNode.properties.trix_hidden_inputs) {
+            const cleanInputs = (targetNode.properties.trix_hidden_inputs || [])
+                .map(Number)
+                .filter(idx => !isNaN(idx) && idx !== -1);
+            if (cleanInputs.map(String).includes(String(targetSlot))) {
+                return true;
+            }
+        }
     }
     
     return false;
@@ -88,19 +119,35 @@ function isLinkHidden(link, graph) {
 // Helper to check if an input slot has a hidden connection
 function isInputSlotHidden(node, slotIndex, graph) {
     if (!node.inputs || !node.inputs[slotIndex]) return false;
+    
     const linkId = node.inputs[slotIndex].link;
     if (linkId == null) return false;
-    const link = graph.links[linkId];
+    
+    if (node.properties && node.properties.trix_hidden_inputs) {
+        if (node.properties.trix_hidden_inputs.map(String).includes(String(slotIndex))) {
+            return true;
+        }
+    }
+    
+    const link = graph.links.get ? graph.links.get(linkId) : graph.links[linkId];
     return isLinkHidden(link, graph);
 }
 
 // Helper to check if an output slot has any hidden connection
 function isOutputSlotHidden(node, slotIndex, graph) {
     if (!node.outputs || !node.outputs[slotIndex]) return false;
+    
     const linkIds = node.outputs[slotIndex].links;
     if (!linkIds || linkIds.length === 0) return false;
+    
+    if (node.properties && node.properties.trix_hidden_outputs) {
+        if (node.properties.trix_hidden_outputs.map(String).includes(String(slotIndex))) {
+            return true;
+        }
+    }
+    
     for (const linkId of linkIds) {
-        const link = graph.links[linkId];
+        const link = graph.links.get ? graph.links.get(linkId) : graph.links[linkId];
         if (isLinkHidden(link, graph)) {
             return true;
         }
@@ -282,7 +329,7 @@ app.registerExtension({
 
             app.ui.settings.addSetting({
                 id: "Trix.WLinks.ColorMode",
-                name: "Color Mode",
+                name: "Slot Color Mode",
                 category: ["Trix Nodes", "WLinks", "ColorMode"],
                 type: "combo",
                 defaultValue: "Match Slot Color",
@@ -310,7 +357,7 @@ app.registerExtension({
                 name: "Live Animation during Generation",
                 category: ["Trix Nodes", "WLinks", "LiveAnim"],
                 type: "boolean",
-                defaultValue: true,
+                defaultValue: false,
                 onChange() {
                     if (app.canvas) app.canvas.draw(true, true);
                 }
@@ -321,7 +368,7 @@ app.registerExtension({
                 name: "Animation Style",
                 category: ["Trix Nodes", "WLinks", "AnimType"],
                 type: "combo",
-                defaultValue: "Static (No Animation)",
+                defaultValue: "Dashed Scrolling Line (Dash)",
                 options: [
                     "Pulsation (Pulse)", 
                     "Color Flow (Out-In-Out)", 
@@ -329,6 +376,10 @@ app.registerExtension({
                     "Neon Plasma Flow", 
                     "Sparkling Electricity", 
                     "Floating Particles", 
+                    "Dashed Scrolling Line (Dash)",
+                    "DNA Helix Spiral",
+                    "Dripping Lava (Glow)",
+                    "Water Pipe Flow (Bulge)",
                     "Static (No Animation)"
                 ],
                 onChange() {
@@ -336,13 +387,20 @@ app.registerExtension({
                 }
             });
 
+
             app.ui.settings.addSetting({
                 id: "Trix.WLinks.ShowMode",
                 name: "Wire Display Mode",
                 category: ["Trix Nodes", "WLinks", "ShowMode"],
                 type: "combo",
-                defaultValue: "Show on Hover",
-                options: ["Hide Always", "Show on Click / Selection", "Show on Hover"],
+                defaultValue: "Show on Hover (Hidden links)",
+                options: [
+                    "Hide Always", 
+                    "Show on Click / Selection (All links)", 
+                    "Show on Click / Selection (Hidden links)", 
+                    "Show on Hover (All links)", 
+                    "Show on Hover (Hidden links)"
+                ],
                 onChange() {
                     if (app.canvas) app.canvas.draw(true, true);
                 }
@@ -418,7 +476,11 @@ app.registerExtension({
                 LGraphCanvas.prototype.renderLink = function(
                     ctx, a, b, link, skip_border, flow, color, start_dir, end_dir, num_sublines
                 ) {
-                    if (!link || link.id === undefined || link.id === null || !app.graph) {
+                    if (!link || !app.graph) {
+                        return origRenderLink.apply(this, arguments);
+                    }
+                    const linkId = link.id !== undefined ? link.id : link[0];
+                    if (linkId === undefined || linkId === null) {
                         return origRenderLink.apply(this, arguments);
                     }
                     
@@ -428,25 +490,39 @@ app.registerExtension({
                     const isLiveAnimEnabled = app.ui.settings.getSettingValue("Trix.WLinks.LiveAnim") !== false;
                     const activeNodeId = getRunningNodeId();
                     
-                    const isExecutingLink = activeNodeId && (String(link.origin_id) == String(activeNodeId) || String(link.target_id) == String(activeNodeId));
+                    const originId = link.origin_id !== undefined ? link.origin_id : link[1];
+                    const targetId = link.target_id !== undefined ? link.target_id : link[3];
                     
-                    const showModeSetting = app.ui.settings.getSettingValue("Trix.WLinks.ShowMode", "Hide Always");
-                    const showMode = getShowMode(showModeSetting);
+                    const isExecutingLink = activeNodeId && (String(originId) == String(activeNodeId) || String(targetId) == String(activeNodeId));
+                    
+                    const showModeSetting = app.ui.settings.getSettingValue("Trix.WLinks.ShowMode", "Show on Hover (All links)");
+                    
+                    let showModeType = "none";
+                    let targetFilter = "all";
+                    if (showModeSetting.includes("Click")) {
+                        showModeType = "click";
+                    } else if (showModeSetting.includes("Hover")) {
+                        showModeType = "hover";
+                    }
+                    if (showModeSetting.includes("(Hidden links)")) {
+                        targetFilter = "hidden";
+                    }
+                    
                     let shouldShowTemporarily = false;
                     
                     if (isLiveAnimEnabled && isExecutingLink) {
                         shouldShowTemporarily = true;
                     }
                     
-                    if (!shouldShowTemporarily && showMode === "click" && this.selected_nodes) {
-                        if (this.selected_nodes[link.origin_id] || this.selected_nodes[String(link.origin_id)] ||
-                            this.selected_nodes[link.target_id] || this.selected_nodes[String(link.target_id)]) {
+                    if (!shouldShowTemporarily && showModeType === "click" && this.selected_nodes) {
+                        if (this.selected_nodes[originId] || this.selected_nodes[String(originId)] ||
+                            this.selected_nodes[targetId] || this.selected_nodes[String(targetId)]) {
                             shouldShowTemporarily = true;
                         }
                     }
                     
-                    if (!shouldShowTemporarily && showMode === "hover" && this.node_over) {
-                        if (String(this.node_over.id) == String(link.origin_id) || String(this.node_over.id) == String(link.target_id)) {
+                    if (!shouldShowTemporarily && showModeType === "hover" && this.node_over) {
+                        if (String(this.node_over.id) == String(originId) || String(this.node_over.id) == String(targetId)) {
                             shouldShowTemporarily = true;
                         }
                     }
@@ -455,10 +531,18 @@ app.registerExtension({
                         return; // Skip rendering completely (hidden)
                     }
                     
-                    // Draw animated connection if temporarily shown (executing, hover or click)
-                    if (shouldShowTemporarily) {
+                    let useCustomAnimation = false;
+                    if (isHidden && shouldShowTemporarily) {
+                        useCustomAnimation = true;
+                    } else if (!isHidden && targetFilter === "all" && shouldShowTemporarily) {
+                        useCustomAnimation = true;
+                    }
+                    
+                    // Draw animated connection if custom animation is enabled
+                    if (useCustomAnimation) {
                         const animSetting = app.ui.settings.getSettingValue("Trix.WLinks.AnimType", "Pulsation (Pulse)");
                         const animStyle = getAnimStyle(animSetting);
+                        
                         const linkColor = color || "#00b4d8";
                         
                         if (animStyle === "static") {
@@ -781,6 +865,262 @@ app.registerExtension({
                             }
                             ctx.restore();
                             return;
+                        } else if (animStyle === "dashed") {
+                            ctx.save();
+                            ctx.lineWidth = 2.5;
+                            ctx.strokeStyle = linkColor;
+                            
+                            // Glowing shadow
+                            ctx.shadowColor = linkColor;
+                            ctx.shadowBlur = 4;
+                            
+                            const dashLen = 8;
+                            const gapLen = 6;
+                            const dspeed = 0.08;
+                            ctx.setLineDash([dashLen, gapLen]);
+                            ctx.lineDashOffset = -(Date.now() * dspeed) % (dashLen + gapLen);
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(points[0].x, points[0].y);
+                            for (let i = 1; i < points.length; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.stroke();
+                            ctx.restore();
+                            return;
+                        } else if (animStyle === "dna") {
+                            ctx.save();
+                            
+                            const freq = 30; // Helix frequency (higher = more details/waves)
+                            const amp = 3.5;   // Helix amplitude (narrower width)
+                            const timeSpeed = Date.now() * 0.006;
+                            
+                            const pathA = [];
+                            const pathB = [];
+                            
+                            for (let i = 0; i < points.length; i++) {
+                                const pt = points[i];
+                                const prevPt = points[i - 1] || pt;
+                                const nextPt = points[i + 1] || pt;
+                                const dx = nextPt.x - prevPt.x;
+                                const dy = nextPt.y - prevPt.y;
+                                const angle = Math.atan2(dy, dx === 0 ? 1 : dx) + Math.PI / 2;
+                                
+                                const t = pt.t;
+                                const offsetA = Math.sin(t * freq - timeSpeed) * amp;
+                                const offsetB = Math.sin(t * freq - timeSpeed + Math.PI) * amp;
+                                
+                                pathA.push({
+                                    x: pt.x + Math.cos(angle) * offsetA,
+                                    y: pt.y + Math.sin(angle) * offsetA
+                                });
+                                pathB.push({
+                                    x: pt.x + Math.cos(angle) * offsetB,
+                                    y: pt.y + Math.sin(angle) * offsetB
+                                });
+                            }
+                            
+                            // Draw connecting base pairs (ladder rungs) with dual colors
+                            ctx.lineWidth = 1.2;
+                            for (let i = 0; i < points.length; i += 2) {
+                                const midX = (pathA[i].x + pathB[i].x) / 2;
+                                const midY = (pathA[i].y + pathB[i].y) / 2;
+                                
+                                // Left/First half (slot color)
+                                ctx.strokeStyle = hexToRgba(linkColor, 0.7);
+                                ctx.beginPath();
+                                ctx.moveTo(pathA[i].x, pathA[i].y);
+                                ctx.lineTo(midX, midY);
+                                ctx.stroke();
+                                
+                                // Right/Second half (white)
+                                ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+                                ctx.beginPath();
+                                ctx.moveTo(midX, midY);
+                                ctx.lineTo(pathB[i].x, pathB[i].y);
+                                ctx.stroke();
+                                
+                                // Little glowing junctions at the strand connections
+                                ctx.fillStyle = linkColor;
+                                ctx.beginPath();
+                                ctx.arc(pathA[i].x, pathA[i].y, 1.2, 0, Math.PI * 2);
+                                ctx.fill();
+                                
+                                ctx.fillStyle = "#ffffff";
+                                ctx.beginPath();
+                                ctx.arc(pathB[i].x, pathB[i].y, 1.2, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                            
+                            // Draw Path A (main strand) with soft glow
+                            ctx.lineWidth = 1.8;
+                            ctx.strokeStyle = linkColor;
+                            ctx.shadowColor = linkColor;
+                            ctx.shadowBlur = 3;
+                            ctx.beginPath();
+                            ctx.moveTo(pathA[0].x, pathA[0].y);
+                            for (let i = 1; i < pathA.length; i++) {
+                                ctx.lineTo(pathA[i].x, pathA[i].y);
+                            }
+                            ctx.stroke();
+                            
+                            // Draw Path B (complementary strand) with white glow
+                            ctx.strokeStyle = "#ffffff";
+                            ctx.shadowColor = "#ffffff";
+                            ctx.beginPath();
+                            ctx.moveTo(pathB[0].x, pathB[0].y);
+                            for (let i = 1; i < pathB.length; i++) {
+                                ctx.lineTo(pathB[i].x, pathB[i].y);
+                            }
+                            ctx.stroke();
+                            
+                            ctx.restore();
+                            return;
+                        } else if (animStyle === "lava") {
+                            ctx.save();
+                            
+                            // 1. Draw static base wire (lava tube): Thick obsidian outer shell
+                            ctx.lineWidth = 4.5;
+                            ctx.strokeStyle = "#1a0805"; // Very dark obsidian brown/black
+                            ctx.beginPath();
+                            ctx.moveTo(points[0].x, points[0].y);
+                            for (let i = 1; i < points.length; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.stroke();
+                            
+                            // 2. Draw flowing lava layer inside: Glowing red/orange
+                            ctx.lineWidth = 2.5;
+                            ctx.strokeStyle = "#ff3c00";
+                            ctx.shadowColor = "#ff4d00";
+                            ctx.shadowBlur = 8;
+                            ctx.beginPath();
+                            ctx.moveTo(points[0].x, points[0].y);
+                            for (let i = 1; i < points.length; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.stroke();
+                            
+                            ctx.shadowBlur = 0; // disable shadow for inner core chunk flows
+                            
+                            // 3. Draw bright yellow hot spots flowing slowly inside
+                            ctx.lineWidth = 1.0;
+                            ctx.strokeStyle = "#ffd700"; // Glowing gold yellow magma core
+                            ctx.setLineDash([4, 18]);
+                            ctx.lineDashOffset = -(Date.now() * 0.015) % 22; // Very slow flow
+                            ctx.beginPath();
+                            ctx.moveTo(points[0].x, points[0].y);
+                            for (let i = 1; i < points.length; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.stroke();
+                            ctx.setLineDash([]); // Revert line dash
+                            
+                            // 4. Draw dripping droplets falling downwards: Viscous, slower, stretchable
+                            const numDrops = 3;
+                            const lspeed = 0.015; // Much slower for viscous feel
+                            for (let i = 0; i < numDrops; i++) {
+                                const tPos = ((i * 0.31) + (Date.now() * 0.00002)) % 0.7 + 0.15;
+                                const ptIdx = Math.floor(tPos * (points.length - 1));
+                                const pt = points[ptIdx] || points[0];
+                                
+                                const cycle = (Date.now() * lspeed + i * 3.3) % 10;
+                                if (cycle < 6) { // Hang and drop
+                                    const progress = cycle / 6; // 0 to 1
+                                    
+                                    if (progress < 0.35) {
+                                        // Hanging phase: droplet stretches out from the wire before detaching
+                                        const stretchY = progress * 15; // Elongate downwards
+                                        ctx.fillStyle = "#ff3c00";
+                                        ctx.beginPath();
+                                        // Draw tear drop attached to pt
+                                        ctx.moveTo(pt.x - 1.5, pt.y);
+                                        ctx.quadraticCurveTo(pt.x - 2, pt.y + stretchY, pt.x, pt.y + stretchY + 1.5);
+                                        ctx.quadraticCurveTo(pt.x + 2, pt.y + stretchY, pt.x + 1.5, pt.y);
+                                        ctx.closePath();
+                                        ctx.fill();
+                                    } else {
+                                        // Detached phase: falling droplet
+                                        const fallProgress = (progress - 0.35) / 0.65;
+                                        const dropY = pt.y + 5.25 + fallProgress * fallProgress * 22; // slow accelerated fall
+                                        const dropX = pt.x;
+                                        const radius = 2.2 * (1 - fallProgress * 0.5); // stays slightly larger, volume
+                                        
+                                        // Glowing core of the falling drop
+                                        ctx.fillStyle = "#ff6a00";
+                                        ctx.beginPath();
+                                        ctx.arc(dropX, dropY, radius, 0, Math.PI * 2);
+                                        ctx.fill();
+                                        
+                                        ctx.fillStyle = "#ffd700";
+                                        ctx.beginPath();
+                                        ctx.arc(dropX, dropY, radius * 0.5, 0, Math.PI * 2);
+                                        ctx.fill();
+                                        
+                                        // Thin viscous trail
+                                        ctx.strokeStyle = `rgba(255, 60, 0, ${(1 - fallProgress) * 0.3})`;
+                                        ctx.lineWidth = radius * 0.4;
+                                        ctx.beginPath();
+                                        ctx.moveTo(pt.x, pt.y + 4);
+                                        ctx.lineTo(dropX, dropY - 2);
+                                        ctx.stroke();
+                                    }
+                                }
+                            }
+                            
+                            ctx.restore();
+                            return;
+                        } else if (animStyle === "pipe") {
+                            ctx.save();
+                            
+                            // 1. Draw base thin pipe wire
+                            ctx.lineWidth = 1.5;
+                            ctx.strokeStyle = hexToRgba(linkColor, 0.4);
+                            ctx.beginPath();
+                            ctx.moveTo(points[0].x, points[0].y);
+                            for (let i = 1; i < points.length; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.stroke();
+                            
+                            // 2. Draw traveling bulges (water pulses) flowing towards target (0 to 1)
+                            const wspeed = 0.0002;
+                            const cycle = (Date.now() * wspeed) % 1.0;
+                            
+                            const numBulges = 3;
+                            for (let b = 0; b < numBulges; b++) {
+                                const centerT = (cycle + b / numBulges) % 1.0;
+                                const bulgeWidth = 4.5;
+                                const bulgeHalfLen = 0.08;
+                                
+                                ctx.lineWidth = 1.5;
+                                ctx.strokeStyle = linkColor;
+                                ctx.beginPath();
+                                ctx.moveTo(points[0].x, points[0].y);
+                                
+                                for (let i = 1; i < points.length; i++) {
+                                    const pt = points[i];
+                                    const t = pt.t;
+                                    
+                                    let dist = Math.abs(t - centerT);
+                                    if (dist > 0.5) dist = 1.0 - dist;
+                                    
+                                    if (dist < bulgeHalfLen) {
+                                        const factor = Math.cos((dist / bulgeHalfLen) * Math.PI * 0.5);
+                                        ctx.lineWidth = 1.5 + (bulgeWidth - 1.5) * factor;
+                                    } else {
+                                        ctx.lineWidth = 1.5;
+                                    }
+                                    
+                                    ctx.lineTo(pt.x, pt.y);
+                                    ctx.stroke();
+                                    ctx.beginPath();
+                                    ctx.moveTo(pt.x, pt.y);
+                                }
+                            }
+                            
+                            ctx.restore();
+                            return;
                         }
                     }
                     
@@ -816,6 +1156,260 @@ app.registerExtension({
                             }
                         }
                     }
+                };
+                
+                // Hook getSlotMenuOptions to show Trix Hide Link
+                const origGetSlotMenuOptions = LGraphNode.prototype.getSlotMenuOptions;
+                LGraphNode.prototype.getSlotMenuOptions = function(slot) {
+                    let options = [];
+                    
+                    // Identify slot index and type supporting both standard LiteGraph and ComfyUI/wrapper formats
+                    let slotIndex = -1;
+                    let isInput = false;
+                    
+                    if (slot && typeof slot === "object") {
+                        if ("slot" in slot) {
+                            slotIndex = slot.slot;
+                            isInput = !!slot.input;
+                        } else {
+                            if (this.inputs) {
+                                slotIndex = this.inputs.findIndex(s => s === slot || (s.name === slot.name && s.type === slot.type) || s.name === slot.name);
+                                if (slotIndex !== -1) {
+                                    isInput = true;
+                                }
+                            }
+                            if (slotIndex === -1 && this.outputs) {
+                                slotIndex = this.outputs.findIndex(s => s === slot || (s.name === slot.name && s.type === slot.type) || s.name === slot.name);
+                                if (slotIndex !== -1) {
+                                    isInput = false;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (slotIndex === -1) {
+                        return origGetSlotMenuOptions ? origGetSlotMenuOptions.apply(this, arguments) : [];
+                    }
+                    
+                    this.properties = this.properties || {};
+                    
+                    // Clean up properties to remove any invalid values (NaN, null, undefined, -1)
+                    if (this.properties.trix_hidden_inputs) {
+                        this.properties.trix_hidden_inputs = this.properties.trix_hidden_inputs
+                            .map(Number)
+                            .filter(idx => !isNaN(idx) && idx !== -1);
+                    }
+                    if (this.properties.trix_hidden_outputs) {
+                        this.properties.trix_hidden_outputs = this.properties.trix_hidden_outputs
+                            .map(Number)
+                            .filter(idx => !isNaN(idx) && idx !== -1);
+                    }
+                    
+                    // Traverse prototype chain to find custom getSlotMenuOptions
+                    let customGetSlotMenuOptions = null;
+                    let proto = Object.getPrototypeOf(this);
+                    while (proto && proto !== Object.prototype) {
+                        if (proto.hasOwnProperty("getSlotMenuOptions")) {
+                            if (proto.getSlotMenuOptions !== LGraphNode.prototype.getSlotMenuOptions) {
+                                customGetSlotMenuOptions = proto.getSlotMenuOptions;
+                                break;
+                            }
+                        }
+                        proto = Object.getPrototypeOf(proto);
+                    }
+                    
+                    if (customGetSlotMenuOptions) {
+                        options = customGetSlotMenuOptions.apply(this, arguments) || [];
+                    } else if (origGetSlotMenuOptions && origGetSlotMenuOptions !== LGraphNode.prototype.getSlotMenuOptions) {
+                        options = origGetSlotMenuOptions.apply(this, arguments) || [];
+                    } else {
+                        // Build default LiteGraph slot menu options
+                        if (isInput) {
+                            const linkId = this.inputs[slotIndex] ? this.inputs[slotIndex].link : null;
+                            if (linkId != null) {
+                                options.push({
+                                    content: "Disconnect Links",
+                                    callback: () => {
+                                        this.disconnectInput(slotIndex);
+                                    }
+                                });
+                            }
+                            options.push({
+                                content: "Rename Slot",
+                                callback: () => {
+                                    const name = prompt("Slot name", (this.inputs[slotIndex] && this.inputs[slotIndex].name) || "");
+                                    if (name && this.inputs[slotIndex]) {
+                                        this.inputs[slotIndex].name = name;
+                                        if (this.setDirtyCanvas) this.setDirtyCanvas(true, true);
+                                    }
+                                }
+                            });
+                        } else {
+                            const linkIds = this.outputs[slotIndex] ? this.outputs[slotIndex].links : null;
+                            if (linkIds && linkIds.length > 0) {
+                                options.push({
+                                    content: "Disconnect Links",
+                                    callback: () => {
+                                        this.disconnectOutput(slotIndex);
+                                    }
+                                });
+                            }
+                            options.push({
+                                content: "Rename Slot",
+                                callback: () => {
+                                    const name = prompt("Slot name", (this.outputs[slotIndex] && this.outputs[slotIndex].name) || "");
+                                    if (name && this.outputs[slotIndex]) {
+                                        this.outputs[slotIndex].name = name;
+                                        if (this.setDirtyCanvas) this.setDirtyCanvas(true, true);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    
+                    const showLinksMenu = app.ui.settings.getSettingValue("Trix.ContextMenu.ShowHideLinks") !== false;
+                    if (showLinksMenu) {
+                        this.properties = this.properties || {};
+                        
+                        let isSlotHidden = false;
+                        if (app.graph) {
+                            if (isInput) {
+                                isSlotHidden = isInputSlotHidden(this, slotIndex, app.graph);
+                            } else {
+                                isSlotHidden = isOutputSlotHidden(this, slotIndex, app.graph);
+                            }
+                        } else {
+                            if (isInput) {
+                                const hiddenInputs = this.properties.trix_hidden_inputs || [];
+                                isSlotHidden = hiddenInputs.map(String).includes(String(slotIndex));
+                            } else {
+                                const hiddenOutputs = this.properties.trix_hidden_outputs || [];
+                                isSlotHidden = hiddenOutputs.map(String).includes(String(slotIndex));
+                            }
+                        }
+                        
+                        options.push({
+                            content: isSlotHidden ? "🌊 Trix Show Link" : "🌊 Trix Hide Link",
+                            callback: () => {
+                                if (isInput) {
+                                    // If the node was in bulk-hidden mode, transition to slot-hidden mode
+                                    if (this.properties.trix_wlinks_hidden === true) {
+                                        this.properties.trix_wlinks_hidden = false;
+                                        if (this.inputs) {
+                                            this.properties.trix_hidden_inputs = this.inputs
+                                                .map((_, idx) => idx)
+                                                .filter(idx => idx !== slotIndex);
+                                        }
+                                        if (this.outputs) {
+                                            this.properties.trix_hidden_outputs = this.outputs.map((_, idx) => idx);
+                                        }
+                                    } else {
+                                        // Standard slot clear
+                                        this.properties.trix_hidden_inputs = (this.properties.trix_hidden_inputs || []).map(String);
+                                        this.properties.trix_hidden_inputs = this.properties.trix_hidden_inputs.filter(idx => idx !== String(slotIndex));
+                                        this.properties.trix_hidden_inputs = this.properties.trix_hidden_inputs.map(Number);
+                                    }
+                                    
+                                    // 2. If showing, clear the other end of the connection as well
+                                    if (isSlotHidden) {
+                                        const linkId = this.inputs[slotIndex] ? this.inputs[slotIndex].link : null;
+                                        if (linkId != null && app.graph) {
+                                            const link = app.graph.links.get ? app.graph.links.get(linkId) : app.graph.links[linkId];
+                                            if (link) {
+                                                const originId = link.origin_id !== undefined ? link.origin_id : link[1];
+                                                const originSlot = link.origin_slot !== undefined ? link.origin_slot : link[2];
+                                                const originNode = app.graph.getNodeById(originId);
+                                                if (originNode) {
+                                                    originNode.properties = originNode.properties || {};
+                                                    if (originNode.properties.trix_wlinks_hidden === true) {
+                                                        originNode.properties.trix_wlinks_hidden = false;
+                                                        if (originNode.inputs) {
+                                                            originNode.properties.trix_hidden_inputs = originNode.inputs.map((_, idx) => idx);
+                                                        }
+                                                        if (originNode.outputs) {
+                                                            originNode.properties.trix_hidden_outputs = originNode.outputs
+                                                                .map((_, idx) => idx)
+                                                                .filter(idx => idx !== originSlot);
+                                                        }
+                                                    } else {
+                                                        originNode.properties.trix_hidden_outputs = (originNode.properties.trix_hidden_outputs || []).map(String);
+                                                        originNode.properties.trix_hidden_outputs = originNode.properties.trix_hidden_outputs.filter(idx => idx !== String(originSlot));
+                                                        originNode.properties.trix_hidden_outputs = originNode.properties.trix_hidden_outputs.map(Number);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Hiding: add to list
+                                        if (!this.properties.trix_hidden_inputs.includes(slotIndex)) {
+                                            this.properties.trix_hidden_inputs.push(slotIndex);
+                                        }
+                                    }
+                                } else {
+                                    // If the node was in bulk-hidden mode, transition to slot-hidden mode
+                                    if (this.properties.trix_wlinks_hidden === true) {
+                                        this.properties.trix_wlinks_hidden = false;
+                                        if (this.inputs) {
+                                            this.properties.trix_hidden_inputs = this.inputs.map((_, idx) => idx);
+                                        }
+                                        if (this.outputs) {
+                                            this.properties.trix_hidden_outputs = this.outputs
+                                                .map((_, idx) => idx)
+                                                .filter(idx => idx !== slotIndex);
+                                        }
+                                    } else {
+                                        // Standard slot clear
+                                        this.properties.trix_hidden_outputs = (this.properties.trix_hidden_outputs || []).map(String);
+                                        this.properties.trix_hidden_outputs = this.properties.trix_hidden_outputs.filter(idx => idx !== String(slotIndex));
+                                        this.properties.trix_hidden_outputs = this.properties.trix_hidden_outputs.map(Number);
+                                    }
+                                    
+                                    // 2. If showing, clear the other end of all connections on this output
+                                    if (isSlotHidden) {
+                                        const linkIds = this.outputs[slotIndex] ? this.outputs[slotIndex].links : null;
+                                        if (linkIds && linkIds.length > 0 && app.graph) {
+                                            for (const linkId of linkIds) {
+                                                const link = app.graph.links.get ? app.graph.links.get(linkId) : app.graph.links[linkId];
+                                                if (link) {
+                                                    const targetId = link.target_id !== undefined ? link.target_id : link[3];
+                                                    const targetSlot = link.target_slot !== undefined ? link.target_slot : link[4];
+                                                    const targetNode = app.graph.getNodeById(targetId);
+                                                    if (targetNode) {
+                                                        targetNode.properties = targetNode.properties || {};
+                                                        if (targetNode.properties.trix_wlinks_hidden === true) {
+                                                            targetNode.properties.trix_wlinks_hidden = false;
+                                                            if (targetNode.inputs) {
+                                                                targetNode.properties.trix_hidden_inputs = targetNode.inputs
+                                                                    .map((_, idx) => idx)
+                                                                    .filter(idx => idx !== targetSlot);
+                                                            }
+                                                            if (targetNode.outputs) {
+                                                                targetNode.properties.trix_hidden_outputs = targetNode.outputs.map((_, idx) => idx);
+                                                            }
+                                                        } else {
+                                                            targetNode.properties.trix_hidden_inputs = (targetNode.properties.trix_hidden_inputs || []).map(String);
+                                                            targetNode.properties.trix_hidden_inputs = targetNode.properties.trix_hidden_inputs.filter(idx => idx !== String(targetSlot));
+                                                            targetNode.properties.trix_hidden_inputs = targetNode.properties.trix_hidden_inputs.map(Number);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Hiding: add to list
+                                        if (!this.properties.trix_hidden_outputs.includes(slotIndex)) {
+                                            this.properties.trix_hidden_outputs.push(slotIndex);
+                                        }
+                                    }
+                                }
+                                if (app.canvas) {
+                                    app.canvas.draw(true, true);
+                                }
+                            }
+                        });
+                    }
+                    
+                    return options;
                 };
             }
         }
@@ -875,7 +1469,18 @@ app.registerExtension({
         if (!node) return [];
         
         node.properties = node.properties || {};
-        const isHidden = !!node.properties.trix_wlinks_hidden;
+        
+        // Determine if node is currently hidden (either by legacy flag, or if all its slots are in the hidden lists)
+        let isHidden = !!node.properties.trix_wlinks_hidden;
+        if (!isHidden && node.inputs && node.outputs) {
+            const hasInputs = node.inputs.length > 0;
+            const hasOutputs = node.outputs.length > 0;
+            const allInputsHidden = hasInputs && (node.properties.trix_hidden_inputs || []).length >= node.inputs.length;
+            const allOutputsHidden = hasOutputs && (node.properties.trix_hidden_outputs || []).length >= node.outputs.length;
+            if ((hasInputs || hasOutputs) && (!hasInputs || allInputsHidden) && (!hasOutputs || allOutputsHidden)) {
+                isHidden = true;
+            }
+        }
         
         return [
             {
@@ -886,16 +1491,32 @@ app.registerExtension({
                     const selectedNodes = canvas && canvas.selected_nodes;
                     const now = Date.now();
                     
+                    const applyToNode = (n) => {
+                        n.properties = n.properties || {};
+                        n.properties.trix_wlinks_hidden = nextHidden;
+                        n.properties.trix_wlinks_updated = now;
+                        
+                        if (nextHidden) {
+                            // Hiding: Populate slot lists with all indices
+                            if (n.inputs) {
+                                n.properties.trix_hidden_inputs = n.inputs.map((_, idx) => idx);
+                            }
+                            if (n.outputs) {
+                                n.properties.trix_hidden_outputs = n.outputs.map((_, idx) => idx);
+                            }
+                        } else {
+                            // Showing: Clear slot lists
+                            n.properties.trix_hidden_inputs = [];
+                            n.properties.trix_hidden_outputs = [];
+                        }
+                    };
+                    
                     if (selectedNodes && selectedNodes[node.id]) {
                         for (const id in selectedNodes) {
-                            const n = selectedNodes[id];
-                            n.properties = n.properties || {};
-                            n.properties.trix_wlinks_hidden = nextHidden;
-                            n.properties.trix_wlinks_updated = now;
+                            applyToNode(selectedNodes[id]);
                         }
                     } else {
-                        node.properties.trix_wlinks_hidden = nextHidden;
-                        node.properties.trix_wlinks_updated = now;
+                        applyToNode(node);
                     }
                     
                     if (canvas) {

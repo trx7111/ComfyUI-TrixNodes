@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-trixnodes"
+description = "An elegant, premium, remote bypass and wire-management nodes suite for ComfyUI."
+version = "1.1.0"
+license = { file = "LICENSE.txt" }
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/trx7111/ComfyUI-TrixNodes"
+
+[tool.comfy]
+PublisherId = "trix7111"
+DisplayName = "ComfyUI-TrixNodes"
+Icon = "https://github.com/trx7111/ComfyUI-TrixNodes/raw/main/assets/1.jpg"
