@@ -1167,6 +1167,93 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
 }
 
 // =========================================================
+// 3b. TOGGLE SYNC (reflect manual mode changes on the canvas)
+// =========================================================
+// Separates user INTENT from actual STATE to avoid feedback loops:
+//
+//   - `active`  is USER INTENT. Only toggle clicks change it. Sync NEVER
+//               touches it. Clicking ON  = "I want all nodes active",
+//               clicking OFF = "I want all nodes bypassed/muted".
+//
+//   - `partial` is STATE MISMATCH. Computed by sync from the real modes
+//               of targeted nodes (including subgraph descendants):
+//                 toggle ON  + some node off  -> partial (amber)
+//                 toggle OFF + some node on   -> partial (amber)
+//                 all nodes match toggle      -> not partial (blue/gray)
+//
+// Sync does NOT call _trixEnforceLogic. Enforce only runs on real user
+// actions (toggle click, target value change, mode change, subgraph
+// convert/unpack). This guarantees a manual mode change on the canvas is
+// never silently undone by the sync pass.
+function _trixSyncTogglesFromNodes(node) {
+    if (!node.properties || !node.properties.trixBypasserState) return false;
+    const state = node.properties.trixBypasserState;
+    const isSimple = (node.type === "TrixBypasserSimple");
+    const offMode = state.muteMode === "mute" ? 2 : 4;
+    let anyChanged = false;
+
+    // Walks a node and all its subgraph descendants.
+    // Returns { anyOff, anyNotOff } so callers can detect partial state.
+    const analyzeNodes = (idList) => {
+        let anyOff = false;
+        let anyNotOff = false;
+        for (const id of idList) {
+            const targetNode = findNodeById(id);
+            if (!targetNode) continue;
+            const stack = [targetNode];
+            while (stack.length > 0) {
+                const n = stack.pop();
+                if (n.mode === offMode) anyOff = true;
+                else anyNotOff = true;
+                const inner = _trixGetInnerGraph(n);
+                if (inner) {
+                    const innerNodes = inner._nodes || inner.nodes || [];
+                    for (let i = innerNodes.length - 1; i >= 0; i--) stack.push(innerNodes[i]);
+                }
+            }
+        }
+        return { anyOff, anyNotOff };
+    };
+
+    // partial when reality doesn't match intent:
+    //   expectedActive=true  -> expect all on;  partial if any is off
+    //   expectedActive=false -> expect all off; partial if any is not off
+    const computeTargetPartial = (target, expectedActive) => {
+        if (!target.value || !target.value.trim()) return false;
+        const ids = target.value.split(",").map(s => s.trim()).filter(Boolean);
+        if (ids.length === 0) return false;
+        const { anyOff, anyNotOff } = analyzeNodes(ids);
+        return expectedActive ? anyOff : anyNotOff;
+    };
+
+    if (isSimple) {
+        if (!state.targets) return false;
+        state.targets.forEach((t) => {
+            const newPartial = computeTargetPartial(t, t.active);
+            if (t.partial !== newPartial) { t.partial = newPartial; anyChanged = true; }
+        });
+    } else {
+        if (!state.groups) return false;
+        state.groups.forEach((g) => {
+            if (!g.targets) {
+                if (g.partial) { g.partial = false; anyChanged = true; }
+                return;
+            }
+            let groupPartial = false;
+            g.targets.forEach((t) => {
+                const expectedActive = g.active && t.active;
+                const newPartial = computeTargetPartial(t, expectedActive);
+                if (t.partial !== newPartial) { t.partial = newPartial; anyChanged = true; }
+                if (newPartial) groupPartial = true;
+            });
+            if (g.partial !== groupPartial) { g.partial = groupPartial; anyChanged = true; }
+        });
+    }
+
+    return anyChanged;
+}
+
+// =========================================================
 // 4. MUTE / BYPASS LOGIC ENFORCEMENT
 // =========================================================
 function _trixEnforceLogic(node) {
@@ -1324,13 +1411,25 @@ function _trixEnforceLogic(node) {
 // =========================================================
 // 5. CANVAS DRAWING IMPLEMENTATION (MINIMALIST & SLEEK)
 // =========================================================
-function _trixDrawSwitch(ctx, x, y, w, h, active) {
+function _trixDrawSwitch(ctx, x, y, w, h, active, partial) {
     ctx.save();
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, h / 2);
-    ctx.fillStyle = active ? "#387aff" : "rgba(255,255,255,0.06)";
+    // partial = amber (state mismatch), active = blue, inactive = gray
+    let fillColor, strokeColor;
+    if (partial) {
+        fillColor = "#f5a623";
+        strokeColor = "#f5a623";
+    } else if (active) {
+        fillColor = "#387aff";
+        strokeColor = "#387aff";
+    } else {
+        fillColor = "rgba(255,255,255,0.06)";
+        strokeColor = "rgba(255,255,255,0.12)";
+    }
+    ctx.fillStyle = fillColor;
     ctx.fill();
-    ctx.strokeStyle = active ? "#387aff" : "rgba(255,255,255,0.12)";
+    ctx.strokeStyle = strokeColor;
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -1697,7 +1796,7 @@ function _trixDrawNodeSimple(node, ctx, w_widget, y, h_widget) {
 
         // Row switch (aligned with the Bypass button's right border)
         const rSwitchX = w - margin - switchW;
-        _trixDrawSwitch(ctx, rSwitchX, rowY + (targetRowH - switchH) / 2, switchW, switchH, target.active);
+        _trixDrawSwitch(ctx, rSwitchX, rowY + (targetRowH - switchH) / 2, switchW, switchH, target.active, target.partial);
 
         node._trixHitAreas.push({
             type: "toggleTarget",
@@ -1998,7 +2097,7 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
         const switchH = 14;
         const switchX = rightOffset - switchW;
         const switchY = groupHeaderY + (groupHeaderH - switchH) / 2;
-        _trixDrawSwitch(ctx, switchX, switchY, switchW, switchH, group.active);
+        _trixDrawSwitch(ctx, switchX, switchY, switchW, switchH, group.active, group.partial);
 
         node._trixHitAreas.push({
             type: "toggleGroup",
@@ -2245,7 +2344,7 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
 
                 // Row switch
                 const rSwitchX = w - margin - 6 - switchW;
-                _trixDrawSwitch(ctx, rSwitchX, rowY + (targetRowH - switchH) / 2, switchW, switchH, target.active);
+                _trixDrawSwitch(ctx, rSwitchX, rowY + (targetRowH - switchH) / 2, switchW, switchH, target.active, target.partial);
 
                 node._trixHitAreas.push({
                     type: "toggleTarget",
@@ -3131,6 +3230,23 @@ function _trixInitNode(node) {
     node.onDrawForeground = function(ctx) {
         const isVueMode = !!(window.LiteGraph?.vueNodesMode || app.canvas?.vueNodesMode || (typeof LGraphCanvas !== "undefined" && LGraphCanvas.vueNodesMode));
         if (isVueMode) return; // Skip in Vue mode
+
+        // Periodically reconcile the `partial` flag on each target/group
+        // with the actual mode of targeted nodes (incl. subgraph
+        // descendants). Sync is READ-ONLY: it never changes `active` and
+        // never calls _trixEnforceLogic, so a manual mode change on the
+        // canvas is never silently undone. Throttled to every ~30 frames.
+        try {
+            this._trixSyncFrame = (this._trixSyncFrame || 0) + 1;
+            if (this._trixSyncFrame >= 30) {
+                this._trixSyncFrame = 0;
+                if (_trixSyncTogglesFromNodes(this)) {
+                    if (this.setDirtyCanvas) this.setDirtyCanvas(true, true);
+                }
+            }
+        } catch (e) {
+            console.error("TrixBypasser sync error:", e);
+        }
 
         // Skip drawing when collapsed/hidden
         if (this.flags?.collapsed || this.collapsed || this.flags?.hidden) return;
