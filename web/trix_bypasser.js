@@ -222,7 +222,7 @@ function findNodeById(id) {
     }
 }
 
-function _trixJumpToNodes(idsString, e) {
+function _trixJumpToNodes(idsString, e, isGroupKind) {
     if (!idsString || !idsString.trim()) return;
     const ids = idsString.split(",").map(s => s.trim()).filter(Boolean);
     if (ids.length === 0) return;
@@ -230,9 +230,19 @@ function _trixJumpToNodes(idsString, e) {
     // 1. Get all nodes with their paths (Root, Root > Node, etc.)
     const allEntries = _trixFindAllNodesRecursively(app.graph);
     
-    // 2. Search for target node information
+    // 2. For group-kind rows, expand each token to its current members
+    //    before jumping. Without this, the token would be looked up as
+    //    a node id and silently skipped.
     const targetEntries = [];
     ids.forEach(id => {
+        if (isGroupKind) {
+            const members = _trixGetGroupMembers(id);
+            members.forEach(m => {
+                const entry = allEntries.find(ent => ent.id === String(m.id));
+                if (entry) targetEntries.push(entry);
+            });
+            return;
+        }
         // Search by key (hierarchical ID) or normal ID
         const entry = allEntries.find(ent => ent.key === id || ent.id === id);
         if (entry) targetEntries.push(entry);
@@ -356,6 +366,77 @@ function findNodeRecursively(graph, id) {
     return null;
 }
 
+// =========================================================
+// 2b. GROUP TARGET HELPERS
+// =========================================================
+// Group-target tokens look like plain ids: `<groupId>` for a group in
+// the root graph, or `<subgraphId>:<groupId>` for a group inside a
+// subgraph. Discrimination from a node id is done via `target.kind ===
+// "group"`, NOT via a prefix, so the stored value stays clean.
+
+// Resolves a group token to its LGraphGroup object (or null).
+function _trixFindGroupByToken(token) {
+    if (!token || typeof token !== "string") return null;
+    const parts = token.split(":").map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return null;
+
+    // Walk into subgraphs the same way findNodeById walks for nodes.
+    let currentGraph = app.graph;
+    for (let i = 0; i < parts.length - 1; i++) {
+        if (!currentGraph) return null;
+        const pid = parts[i];
+        const nodeId = parseInt(pid);
+        const subgraphNode = currentGraph.getNodeById
+            ? currentGraph.getNodeById(nodeId)
+            : (currentGraph._nodes || currentGraph.nodes || []).find(n => n.id == pid);
+        if (!subgraphNode) return null;
+        currentGraph = _trixGetInnerGraph(subgraphNode);
+    }
+    if (!currentGraph) return null;
+
+    const groupId = parseInt(parts[parts.length - 1]);
+    const groups = currentGraph._groups || currentGraph.groups || [];
+    return groups.find(g => g.id == groupId) || null;
+}
+
+// Returns the nodes currently inside the group, or [] if the group is
+// gone. Calls recomputeInsideNodes() so the membership is fresh.
+function _trixGetGroupMembers(token) {
+    const group = _trixFindGroupByToken(token);
+    if (!group) return [];
+    try { if (group.recomputeInsideNodes) group.recomputeInsideNodes(); } catch (e) {}
+    return Array.from(group._nodes || group.nodes || []);
+}
+
+// Walks the workspace (recursively into subgraphs) and returns every
+// group as { token, title, path, graph } so the picker can list them.
+function _trixFindAllGroups(graph, chain = [], currentPath = "Root") {
+    let list = [];
+    if (!graph) return list;
+    const groups = graph._groups || graph.groups || [];
+    for (const g of groups) {
+        if (g.id == null) continue;
+        const myChain = [...chain, g.id];
+        const token = myChain.join(":");
+        const title = g.title || `Group ${g.id}`;
+        list.push({ token, title, path: currentPath, graph });
+    }
+    const nodes = graph._nodes || graph.nodes || [];
+    for (const n of nodes) {
+        const inner = _trixGetInnerGraph(n);
+        if (inner) {
+            const subPath = currentPath === "Root" ? (n.title || n.type || `Node ${n.id}`) : `${currentPath} > ${n.title || n.type || n.id}`;
+            list = list.concat(_trixFindAllGroups(inner, [...chain, n.id], subPath));
+        }
+    }
+    return list;
+}
+
+// Convenience: returns true if a target is a group-kind target.
+function _trixIsGroupTarget(target) {
+    return !!(target && target.kind === "group");
+}
+
 function _trixFindAllNodesRecursively(graph, currentPath = "Root", chain = []) {
     let list = [];
     if (!graph) return list;
@@ -405,6 +486,15 @@ function _trixGetAllGraphNodes(graph) {
     return list;
 }
 
+// Returns true if a value id looks like a group token. Group-kind
+// target values are stored without a prefix, so we can't tell from the
+// token alone — we need the target. This helper is only used by the
+// title resolver where the caller doesn't have the target object; it
+// returns true if the token resolves to a group on the canvas.
+function _trixValueIsGroupToken(token) {
+    return !!_trixFindGroupByToken(token);
+}
+
 function _trixResolveNodeTitles(val, node) {
     if (!val || !val.trim()) return "";
     const ids = val.split(",").map(s => s.trim()).filter(Boolean);
@@ -420,6 +510,20 @@ function _trixResolveNodeTitles(val, node) {
     const activeIds = [];
     
     ids.forEach((id) => {
+        // Group-kind targets store group tokens (possibly multiple,
+        // comma-separated). Render each group title with a live member
+        // count instead of resolving to a node id (which would be wrong).
+        if (_trixValueIsGroupToken(id)) {
+            const group = _trixFindGroupByToken(id);
+            if (group) {
+                try { if (group.recomputeInsideNodes) group.recomputeInsideNodes(); } catch (e) {}
+                const members = Array.from(group._nodes || group.nodes || []);
+                const title = (group.title || `Group ${id}`) + ` (${members.length})`;
+                activeIds.push(id);
+                activeTitles.push(title);
+            }
+            return;
+        }
         const targetNode = findNodeById(id);
         if (targetNode) {
             const title = targetNode.title || targetNode.type || `Node ${id}`;
@@ -678,9 +782,11 @@ function _trixGetSmartSearchCandidates(bypasserNode, missingId) {
     return candidates;
 }
 
-function _trixShowPickerModal(node, currentVal, onSelect) {
-    const entries = _trixFindAllNodesRecursively(app.graph);
+function _trixShowPickerModal(node, currentVal, onSelect, mode = "nodes") {
+    const isGroupsMode = (mode === "groups");
+    const entries = isGroupsMode ? [] : _trixFindAllNodesRecursively(app.graph);
     const usedNodeIds = _trixGetGlobalUsedNodeIds();
+    const groupEntries = _trixFindAllGroups(app.graph);
 
     const groups = {};
     for (const e of entries) {
@@ -688,6 +794,7 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
         groups[e.path].push(e);
     }
     const paths = Object.keys(groups).sort((a, b) => a === "Root" ? -1 : a.localeCompare(b));
+    let showGroupsSectionOpen = true;
 
     const overlay = document.createElement("div");
     overlay.className = "trix-picker-overlay";
@@ -715,14 +822,15 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
     
     const title = document.createElement("h3");
     title.className = "trix-picker-title";
-    title.textContent = "Select Target Nodes";
+    title.textContent = isGroupsMode ? "Select Groups" : "Select Target Nodes";
     
     const manualContainer = document.createElement("div");
     manualContainer.className = "trix-picker-manual-container";
+    if (isGroupsMode) manualContainer.style.display = "none";
     
     const manualLabel = document.createElement("span");
     manualLabel.className = "trix-picker-manual-label";
-    manualLabel.textContent = "Selected Node IDs (Comma separated):";
+    manualLabel.textContent = isGroupsMode ? "Selected Groups:" : "Selected Node IDs (Comma separated):";
     
     const manualRow = document.createElement("div");
     manualRow.className = "trix-picker-manual-row";
@@ -765,7 +873,7 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
     
     const search = document.createElement("input");
     search.className = "trix-picker-search";
-    search.placeholder = "Search workspace nodes by title or ID...";
+    search.placeholder = isGroupsMode ? "Search groups by title..." : "Search workspace nodes by title or ID...";
     
     header.appendChild(title);
     header.appendChild(manualContainer);
@@ -809,6 +917,8 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
         return manualInput.value.split(",").map(s => s.trim()).filter(Boolean);
     };
 
+    // Both modes (nodes and groups) use the same multi-select toggle
+    // semantics so the picker behavior stays symmetric.
     const toggleIdInInput = (id) => {
         let ids = getSelectedIds();
         const index = ids.indexOf(id);
@@ -847,7 +957,10 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
         const missingIds = [];
         const activeSelectedIds = [];
         selectedIds.forEach((id) => {
-            if (!findNodeById(id)) {
+            const exists = isGroupsMode
+                ? !!_trixFindGroupByToken(id)
+                : !!findNodeById(id);
+            if (!exists) {
                 missingIds.push(id);
             } else {
                 activeSelectedIds.push(id);
@@ -905,7 +1018,9 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
         
         const term = search.value.toLowerCase().trim();
         if (term) {
-            const matchedEntries = entries.filter(e => e.title.toLowerCase().includes(term) || e.id.includes(term) || e.type.toLowerCase().includes(term));
+            // In groups mode, only match groups.
+            const matchedEntries = isGroupsMode ? [] : entries.filter(e => e.title.toLowerCase().includes(term) || e.id.includes(term) || e.type.toLowerCase().includes(term));
+            const matchedGroups = groupEntries.filter(g => g.title.toLowerCase().includes(term) || g.token.toLowerCase().includes(term));
             const matchedMissing = missingIds.filter(id => {
                 const cached = node.properties?.trixNodeCache?.[id];
                 const title = cached ? cached.title : "";
@@ -913,31 +1028,56 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
                 return id.includes(term) || title.toLowerCase().includes(term) || type.toLowerCase().includes(term);
             });
 
-            if (matchedEntries.length === 0 && matchedMissing.length === 0) {
-                list.innerHTML = `<div style="padding:20px;text-align:center;color:#555;font-size:12px;">No matching nodes found</div>`;
-            } else {
-                matchedMissing.forEach(id => {
-                    const cached = node.properties?.trixNodeCache?.[id];
-                    const cachedTitleText = cached ? ` - ${cached.title}` : "";
-                    const cachedType = cached ? cached.type : "Unknown type";
-                    
+            const anyMatches = (matchedEntries.length + (isGroupsMode ? matchedGroups.length : 0) + matchedMissing.length) > 0;
+            if (!anyMatches) {
+                list.innerHTML = `<div style="padding:20px;text-align:center;color:#555;font-size:12px;">No matching ${isGroupsMode ? "groups" : "nodes"} found</div>`;
+                return;
+            }
+            // Group matches are only relevant in groups mode — in nodes
+            // mode the picker must NOT show groups.
+            if (isGroupsMode && matchedGroups.length > 0) {
+                const grpHead = document.createElement("div");
+                grpHead.className = "trix-group-header active";
+                grpHead.style.border = "1px solid rgba(86, 200, 140, 0.25)";
+                grpHead.innerHTML = `<span style="color:#7fd9a5;">▦ Groups (${matchedGroups.length})</span><span class="arrow">▼</span>`;
+                list.appendChild(grpHead);
+                const grpContent = document.createElement("div");
+                grpContent.className = "trix-group-content open";
+                matchedGroups.forEach(g => {
+                    const selectedIds = getSelectedIds();
+                    const isSelected = selectedIds.includes(g.token);
+                    const members = _trixGetGroupMembers(g.token);
                     const item = document.createElement("div");
-                    item.className = "trix-picker-item selected";
-                    item.innerHTML = `<div class="trix-item-title"><span style="color:#ff6b6b;margin-right:6px;">⚠️</span>Missing Node (ID: ${id})${cachedTitleText}</div><div class="trix-item-meta" style="color:#ff8888;">${cachedType} (Not in graph)</div>`;
+                    item.className = "trix-picker-item" + (isSelected ? " selected" : "");
+                    item.innerHTML = `<div class="trix-item-title"><span style="color:#7fd9a5;margin-right:6px;">▦</span>${g.title}</div><div class="trix-item-meta">Group (ID: ${g.token}) — ${members.length} node${members.length === 1 ? "" : "s"}</div>`;
                     item.onclick = (e) => {
                         e.stopPropagation();
-                        toggleIdInInput(id);
+                        toggleIdInInput(g.token);
                     };
-                    list.appendChild(item);
+                    grpContent.appendChild(item);
                 });
-                
-                matchedEntries.forEach(e => addItem(e, list));
+                list.appendChild(grpContent);
             }
+            matchedMissing.forEach(id => {
+                const cached = node.properties?.trixNodeCache?.[id];
+                const cachedTitleText = cached ? ` - ${cached.title}` : "";
+                const cachedType = cached ? cached.type : "Unknown type";
+                
+                const item = document.createElement("div");
+                item.className = "trix-picker-item selected";
+                item.innerHTML = `<div class="trix-item-title"><span style="color:#ff6b6b;margin-right:6px;">⚠️</span>Missing Node (ID: ${id})${cachedTitleText}</div><div class="trix-item-meta" style="color:#ff8888;">${cachedType} (Not in graph)</div>`;
+                item.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleIdInInput(id);
+                };
+                list.appendChild(item);
+            });
+            matchedEntries.forEach(e => addItem(e, list));
             return;
         }
 
-        // 1. Prepend Active Selected Nodes Group
-        if (activeSelectedIds && activeSelectedIds.length > 0) {
+        // 1. Prepend Active Selected Nodes Group (nodes mode only)
+        if (!isGroupsMode && activeSelectedIds && activeSelectedIds.length > 0) {
             const grp = document.createElement("div");
             grp.className = "trix-group-header active";
             grp.style.border = "1px solid rgba(56, 122, 255, 0.3)";
@@ -977,7 +1117,64 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
             list.appendChild(content);
         }
 
-        // 2. Prepend Missing Nodes Group
+        // 2. Groups section — shown ONLY in groups mode. In nodes mode
+        // the picker lists only nodes; a group would otherwise be
+        // flagged as a missing node id.
+        if (isGroupsMode && groupEntries.length > 0) {
+            const grpHeader = document.createElement("div");
+            grpHeader.className = "trix-group-header active";
+            grpHeader.style.border = "1px solid rgba(86, 200, 140, 0.25)";
+            grpHeader.innerHTML = `<span style="color:#7fd9a5;">▦ Groups (${groupEntries.length})</span><span class="arrow">${showGroupsSectionOpen ? '▼' : '▶'}</span>`;
+            grpHeader.onclick = (e) => {
+                e.stopPropagation();
+                showGroupsSectionOpen = !showGroupsSectionOpen;
+                render(missingIds, activeSelectedIds);
+            };
+            list.appendChild(grpHeader);
+
+            const groupContent = document.createElement("div");
+            groupContent.className = "trix-group-content";
+            if (showGroupsSectionOpen) groupContent.classList.add("open");
+
+            if (showGroupsSectionOpen) {
+                const byPath = {};
+                groupEntries.forEach(g => {
+                    if (!byPath[g.path]) byPath[g.path] = [];
+                    byPath[g.path].push(g);
+                });
+                Object.keys(byPath).sort((a, b) => a === "Root" ? -1 : a.localeCompare(b)).forEach(p => {
+                    const subHead = document.createElement("div");
+                    subHead.style.cssText = "padding:4px 12px;color:#777;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;";
+                    subHead.textContent = p;
+                    groupContent.appendChild(subHead);
+
+                    byPath[p].sort((a, b) => a.title.localeCompare(b.title));
+                    byPath[p].forEach(g => {
+                        const selectedIds = getSelectedIds();
+                        const isSelected = selectedIds.includes(g.token);
+                        const members = _trixGetGroupMembers(g.token);
+                        const item = document.createElement("div");
+                        item.className = "trix-picker-item" + (isSelected ? " selected" : "");
+                        item.innerHTML = `<div class="trix-item-title"><span style="color:#7fd9a5;margin-right:6px;">▦</span>${g.title}</div><div class="trix-item-meta">Group (ID: ${g.token}) — ${members.length} node${members.length === 1 ? "" : "s"}</div>`;
+                        item.onclick = (e) => {
+                            e.stopPropagation();
+                            toggleIdInInput(g.token);
+                        };
+                        groupContent.appendChild(item);
+                    });
+                });
+            }
+            list.appendChild(groupContent);
+        }
+
+        // In groups mode, the per-path node lists and missing-nodes
+        // block are not relevant — return after the groups section.
+        if (isGroupsMode) {
+            list.scrollTop = scrollTop;
+            return;
+        }
+
+        // 3. Missing Nodes Group (nodes mode only)
         if (missingIds && missingIds.length > 0) {
             const grp = document.createElement("div");
             grp.className = "trix-group-header active";
@@ -1156,7 +1353,8 @@ function _trixShowPickerModal(node, currentVal, onSelect) {
 
     search.oninput = () => {
         const selected = getSelectedIds();
-        render(selected.filter(id => !findNodeById(id)), selected.filter(id => !!findNodeById(id)));
+        const exists = (id) => isGroupsMode ? !!_trixFindGroupByToken(id) : !!findNodeById(id);
+        render(selected.filter(id => !exists(id)), selected.filter(id => exists(id)));
     };
     manualInput.oninput = updateWarningAndRender;
     
@@ -1220,7 +1418,17 @@ function _trixSyncTogglesFromNodes(node) {
     //   expectedActive=false -> expect all off; partial if any is not off
     const computeTargetPartial = (target, expectedActive) => {
         if (!target.value || !target.value.trim()) return false;
-        const ids = target.value.split(",").map(s => s.trim()).filter(Boolean);
+        // Group-kind targets: resolve to current members.
+        let ids;
+        if (_trixIsGroupTarget(target)) {
+            const tokens = target.value.split(",").map(s => s.trim()).filter(Boolean);
+            ids = [];
+            tokens.forEach(tok => {
+                _trixGetGroupMembers(tok).forEach(m => ids.push(String(m.id)));
+            });
+        } else {
+            ids = target.value.split(",").map(s => s.trim()).filter(Boolean);
+        }
         if (ids.length === 0) return false;
         const { anyOff, anyNotOff } = analyzeNodes(ids);
         return expectedActive ? anyOff : anyNotOff;
@@ -1263,12 +1471,32 @@ function _trixEnforceLogic(node) {
     
     const isSimple = (node.type === "TrixBypasserSimple");
 
+    // For group-kind targets, expand the group token to its current
+    // members before pushing into currentTargets. Membership is dynamic,
+    // so this runs on every enforce pass.
+    const _expandTargetValue = (target) => {
+        const val = target.value || "";
+        if (!val.trim()) return [];
+        if (_trixIsGroupTarget(target)) {
+            // Group target may store multiple comma-separated group tokens
+            // (same multi-select semantics as node targets). Expand each to
+            // its current members, deduplicated upstream via currentTargets.
+            const tokens = val.split(",").map(s => s.trim()).filter(Boolean);
+            const out = [];
+            tokens.forEach(tok => {
+                const members = _trixGetGroupMembers(tok);
+                members.forEach(m => out.push(String(m.id)));
+            });
+            return out;
+        }
+        return val.split(",").map(s => s.trim()).filter(Boolean);
+    };
+
     if (isSimple) {
         if (state.targets) {
             state.targets.forEach((target) => {
-                const val = target.value || "";
-                if (!val.trim()) return;
-                const ids = val.split(",").map(s => s.trim()).filter(Boolean);
+                const ids = _expandTargetValue(target);
+                if (ids.length === 0) return;
                 
                 let isTargetActive = target.active;
                 if (state.selectMode === "single") {
@@ -1300,9 +1528,8 @@ function _trixEnforceLogic(node) {
                 }
 
                 group.targets.forEach((target) => {
-                    const val = target.value || "";
-                    if (!val.trim()) return;
-                    const ids = val.split(",").map(s => s.trim()).filter(Boolean);
+                    const ids = _expandTargetValue(target);
+                    if (ids.length === 0) return;
                     
                     const isTargetActive = isGroupActive && target.active;
                     const requiredMode = isTargetActive ? 0 : (state.muteMode === "mute" ? 2 : 4);
@@ -1456,7 +1683,8 @@ function _trixDrawNodeSimple(node, ctx, w_widget, y, h_widget) {
     const headerH = 20;
     const pillW = 75;
     const trashW = 20;
-    const addTargetBtnW = w - 2 * margin - 2 * pillW - trashW - 12;
+    const addGroupBtnW = 28; // +Group button width
+    const addTargetBtnW = w - 2 * margin - 2 * pillW - trashW - addGroupBtnW - 16;
     let curY = startY + topGap;
 
     node._trixHitAreas = [];
@@ -1542,8 +1770,26 @@ function _trixDrawNodeSimple(node, ctx, w_widget, y, h_widget) {
             });
         }
 
+        // --- +Group Button (adds a group-kind target) ---
+        const addGroupX = addX + addTargetBtnW + 4;
+        ctx.beginPath();
+        ctx.roundRect(addGroupX, curY, addGroupBtnW, headerH, 4);
+        ctx.fillStyle = canAddTarget ? "rgba(127, 217, 165, 0.10)" : "rgba(255,255,255,0.01)";
+        ctx.fill();
+        ctx.strokeStyle = canAddTarget ? "rgba(127, 217, 165, 0.4)" : "rgba(255,255,255,0.1)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = canAddTarget ? "#9fd9b5" : "#555";
+        ctx.fillText("+G", addGroupX + addGroupBtnW / 2, curY + headerH / 2);
+        if (canAddTarget) {
+            node._trixHitAreas.push({
+                type: "addSimpleGroupTarget",
+                x: addGroupX, y: curY, w: addGroupBtnW, h: headerH
+            });
+        }
+
         // --- Trash Mode Button ---
-        const trashX = addX + addTargetBtnW + 4;
+        const trashX = addGroupX + addGroupBtnW + 4;
         const isDeleteMode = state.deleteMode;
         ctx.beginPath();
         ctx.roundRect(trashX, curY, trashW, headerH, 4);
@@ -1615,15 +1861,18 @@ function _trixDrawNodeSimple(node, ctx, w_widget, y, h_widget) {
         let hasMissing = false;
         if (target.value) {
             const ids = target.value.split(",").map(s => s.trim()).filter(Boolean);
-            hasMissing = ids.some(id => !findNodeById(id));
+            const exists = (id) => _trixIsGroupTarget(target) ? !!_trixFindGroupByToken(id) : !!findNodeById(id);
+            hasMissing = ids.some(id => !exists(id));
         }
 
         const rightSpace = 32 + (isDeleteMode ? 18 : 0);
         const jumpW = 18; // Jump button width
         const totalTargetW = w - 2 * margin - rightSpace;
         
-        // Measure dynamic label width
-        const displayLabel = target.name || `Target ${tIndex + 1}`;
+        // Measure dynamic label width. Group-kind rows get a green ▦
+        // prefix so they're visually distinct from node rows.
+        const isGroupRow = _trixIsGroupTarget(target);
+        const displayLabel = (isGroupRow ? "▦ " : "") + (target.name || (isGroupRow ? `Group ${tIndex + 1}` : `Target ${tIndex + 1}`));
         ctx.save();
         ctx.font = "bold 9px 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif";
         const textWidth = ctx.measureText(displayLabel).width;
@@ -2160,15 +2409,17 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
                 let hasMissing = false;
                 if (target.value) {
                     const ids = target.value.split(",").map(s => s.trim()).filter(Boolean);
-                    hasMissing = ids.some(id => !findNodeById(id));
+                    const exists = (id) => _trixIsGroupTarget(target) ? !!_trixFindGroupByToken(id) : !!findNodeById(id);
+                    hasMissing = ids.some(id => !exists(id));
                 }
 
                 const rightSpace = 32 + (isDeleteMode ? 18 : 0);
                 const jumpW = 18; // Jump button width
                 const totalTargetW = w - 2 * margin - 12 - rightSpace;
                 
-                // Measure dynamic label width
-                const displayLabel = target.name || `Target ${tIndex + 1}`;
+                // Measure dynamic label width. Group-kind rows get a green ▦ prefix.
+                const isGroupRow = _trixIsGroupTarget(target);
+                const displayLabel = (isGroupRow ? "▦ " : "") + (target.name || `Target ${tIndex + 1}`);
                 ctx.save();
                 ctx.font = "bold 9px 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif";
                 const textWidth = ctx.measureText(displayLabel).width;
@@ -2360,9 +2611,13 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
             if (canAddTarget) {
                 const addBtnW = 20;
                 const addBtnH = 12;
-                const addBtnX = w / 2 - addBtnW / 2;
                 const addBtnY = rowY + 3;
+                // Two buttons side-by-side: "+" (nodes) and "+G" (group).
+                const totalBtnsW = addBtnW * 2 + 6;
+                const addBtnX = w / 2 - totalBtnsW / 2;
+                const addBtnGX = addBtnX + addBtnW + 6;
                 
+                // + (nodes)
                 ctx.beginPath();
                 ctx.roundRect(addBtnX, addBtnY, addBtnW, addBtnH, 2);
                 ctx.fillStyle = "#101014";
@@ -2370,16 +2625,30 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
                 ctx.strokeStyle = "#2c2c36";
                 ctx.lineWidth = 1;
                 ctx.stroke();
-
                 ctx.font = "9px 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif";
                 ctx.textAlign = "center";
                 ctx.fillStyle = "#778";
-                ctx.fillText("+", w / 2, addBtnY + addBtnH / 2);
-
+                ctx.fillText("+", addBtnX + addBtnW / 2, addBtnY + addBtnH / 2);
                 node._trixHitAreas.push({
                     type: "addTargetRow",
                     groupIndex: gIndex,
-                    x: addBtnX - 8, y: rowY, w: addBtnW + 16, h: 16
+                    x: addBtnX - 4, y: rowY, w: addBtnW + 4, h: 16
+                });
+
+                // +G (group)
+                ctx.beginPath();
+                ctx.roundRect(addBtnGX, addBtnY, addBtnW, addBtnH, 2);
+                ctx.fillStyle = "rgba(127, 217, 165, 0.08)";
+                ctx.fill();
+                ctx.strokeStyle = "rgba(127, 217, 165, 0.35)";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.fillStyle = "#9fd9b5";
+                ctx.fillText("+G", addBtnGX + addBtnW / 2, addBtnY + addBtnH / 2);
+                node._trixHitAreas.push({
+                    type: "addGroupTargetRow",
+                    groupIndex: gIndex,
+                    x: addBtnGX - 4, y: rowY, w: addBtnW + 4, h: 16
                 });
             }
         }
@@ -2829,16 +3098,38 @@ function _trixMouseDown(node, e, pos) {
                 return true;
             }
 
-            // 3b. Add Simple Target Button
+            // 3b. Add Simple Target Button (nodes)
             if (area.type === "addSimpleTarget") {
                 if (state.targets.length < 10) {
                     state.targets.push({
                         name: `Target ${state.targets.length + 1}`,
                         value: "",
-                        active: state.selectMode === "single" ? false : true
+                        active: state.selectMode === "single" ? false : true,
+                        kind: "nodes"
                     });
                     _trixEnforceLogic(node);
                     node.setDirtyCanvas(true, true);
+                }
+                return true;
+            }
+
+            // 3c. Add Simple Group Target Button (+G)
+            if (area.type === "addSimpleGroupTarget") {
+                if (state.targets.length < 10) {
+                    const newTarget = {
+                        name: `Group ${state.targets.filter(t => t.kind === "group").length + 1}`,
+                        value: "",
+                        active: state.selectMode === "single" ? false : true,
+                        kind: "group"
+                    };
+                    state.targets.push(newTarget);
+                    node.setDirtyCanvas(true, true);
+                    // Immediately open the group picker for the new row.
+                    _trixShowPickerModal(node, newTarget.value, (newVal) => {
+                        newTarget.value = newVal;
+                        _trixEnforceLogic(node);
+                        node.setDirtyCanvas(true, true);
+                    }, "groups");
                 }
                 return true;
             }
@@ -2914,7 +3205,7 @@ function _trixMouseDown(node, e, pos) {
                 return true;
             }
 
-            // 9. Click Target box
+            // 9. Click Target box — route to group picker for group-kind rows.
             if (area.type === "clickTargetBox") {
                 let target;
                 if (isSimple) {
@@ -2926,11 +3217,12 @@ function _trixMouseDown(node, e, pos) {
                     }
                 }
                 if (target) {
+                    const pickerMode = _trixIsGroupTarget(target) ? "groups" : "nodes";
                     _trixShowPickerModal(node, target.value, (newVal) => {
                         target.value = newVal;
                         _trixEnforceLogic(node);
                         node.setDirtyCanvas(true, true);
-                    });
+                    }, pickerMode);
                 }
                 return true;
             }
@@ -2991,12 +3283,32 @@ function _trixMouseDown(node, e, pos) {
                 return true;
             }
 
-            // 12. Add Target Row (+)
+            // 12. Add Target Row (+) — nodes
             if (area.type === "addTargetRow") {
                 const group = state.groups[area.groupIndex];
                 if (group && group.targets.length < 10) {
-                    group.targets.push({ value: "", active: true });
+                    group.targets.push({ value: "", active: true, kind: "nodes" });
                     node.setDirtyCanvas(true, true);
+                }
+                return true;
+            }
+
+            // 12b. Add Group Target Row (+G)
+            if (area.type === "addGroupTargetRow") {
+                const group = state.groups[area.groupIndex];
+                if (group && group.targets.length < 10) {
+                    const newTarget = {
+                        value: "",
+                        active: true,
+                        kind: "group"
+                    };
+                    group.targets.push(newTarget);
+                    node.setDirtyCanvas(true, true);
+                    _trixShowPickerModal(node, newTarget.value, (newVal) => {
+                        newTarget.value = newVal;
+                        _trixEnforceLogic(node);
+                        node.setDirtyCanvas(true, true);
+                    }, "groups");
                 }
                 return true;
             }
@@ -3019,7 +3331,7 @@ function _trixMouseDown(node, e, pos) {
                     }
                 }
                 if (target && target.value) {
-                    _trixJumpToNodes(target.value, e);
+                    _trixJumpToNodes(target.value, e, _trixIsGroupTarget(target));
                 }
                 // Clear hover states immediately since the viewport shifts away from under the mouse
                 node._trixHoveredJumpTargetIndex = -1;
@@ -3315,6 +3627,15 @@ function _trixInitNode(node) {
 
     setTimeout(() => {
         try {
+            // Migrate legacy targets: any target without `kind` is
+            // treated as a nodes-kind target so old saved workflows
+            // keep working unchanged.
+            const state = node.properties?.trixBypasserState;
+            if (state) {
+                const migrate = (t) => { if (t && !t.kind) t.kind = "nodes"; };
+                if (state.targets) state.targets.forEach(migrate);
+                if (state.groups) state.groups.forEach(g => (g.targets || []).forEach(migrate));
+            }
             _trixEnforceLogic(node);
         } catch(e) {}
     }, 200);
