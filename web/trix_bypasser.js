@@ -1235,38 +1235,87 @@ function _trixEnforceLogic(node) {
         }
     }
 
-    const lastTargeted = node._trixLastTargeted || new Map();
-    
-    // 1. Restore nodes that are no longer targeted
-    for (const [id, oldMode] of lastTargeted.entries()) {
-        if (!currentTargets.has(id)) {
-            const targetNode = findNodeById(id);
-            if (targetNode) {
-                const orig = node.properties.trixBypasserOriginalModes[id] ?? 0;
-                targetNode.mode = orig;
-                if (targetNode.setDirtyCanvas) targetNode.setDirtyCanvas(true, true);
-            }
-            delete node.properties.trixBypasserOriginalModes[id];
-        }
-    }
+    // =====================================================================
+    // SUBGRAPH EXPANSION
+    // ---------------------------------------------------------------------
+    // When a target node is a subgraph (has an inner graph), the parent's
+    // required mode is propagated to ALL descendant nodes inside it, so
+    // bypassing or muting a subgraph actually skips its inner work instead
+    // of leaving the inner nodes running.
+    //
+    // Descendants are keyed by hierarchical id ("subgraphId:innerId:...")
+    // so they don't collide with direct target ids stored in
+    // trixBypasserOriginalModes.
+    // =====================================================================
+    const effectiveTargets = new Map(); // hierId -> { node, mode }
+    const directTargetNodes = new Set();
 
-    // 2. Apply modes to current targets
-    let changed = false;
     for (const [id, reqMode] of currentTargets.entries()) {
         const targetNode = findNodeById(id);
         if (targetNode) {
-            if (node.properties.trixBypasserOriginalModes[id] === undefined) {
-                node.properties.trixBypasserOriginalModes[id] = targetNode.mode;
-            }
-            if (targetNode.mode !== reqMode) {
-                targetNode.mode = reqMode;
-                if (targetNode.setDirtyCanvas) targetNode.setDirtyCanvas(true, true);
-                changed = true;
-            }
+            effectiveTargets.set(id, { node: targetNode, mode: reqMode });
+            directTargetNodes.add(targetNode);
         }
     }
 
-    node._trixLastTargeted = currentTargets;
+    // BFS into every subgraph node. If a descendant is itself an explicit
+    // direct target, its own required mode wins (we skip inheriting).
+    const _bfsQueue = [];
+    for (const [id, entry] of effectiveTargets.entries()) {
+        _bfsQueue.push({ node: entry.node, mode: entry.mode, hierId: id });
+    }
+    while (_bfsQueue.length > 0) {
+        const { node: currentNode, mode: inheritedMode, hierId: currentHierId } = _bfsQueue.shift();
+        const inner = _trixGetInnerGraph(currentNode);
+        if (!inner) continue;
+        const innerNodes = inner._nodes || inner.nodes || [];
+        for (const child of innerNodes) {
+            // Child is itself a direct target -> its own mode wins, don't inherit.
+            if (directTargetNodes.has(child)) continue;
+            const childHierId = `${currentHierId}:${child.id}`;
+            if (effectiveTargets.has(childHierId)) continue; // multi-parent guard
+            effectiveTargets.set(childHierId, { node: child, mode: inheritedMode });
+            _bfsQueue.push({ node: child, mode: inheritedMode, hierId: childHierId });
+        }
+    }
+
+    const lastTargeted = node._trixLastTargeted || new Map(); // hierId -> { node, mode }
+
+    // 1. Restore nodes that are no longer targeted (direct + descendants)
+    for (const [hierId, prevEntry] of lastTargeted.entries()) {
+        if (!effectiveTargets.has(hierId)) {
+            // Prefer stored node reference; fall back to findNodeById for cases
+            // where the node identity changed (e.g. subgraph unpack).
+            const targetNode = (prevEntry && prevEntry.node && prevEntry.node.mode !== undefined)
+                ? prevEntry.node
+                : findNodeById(hierId);
+            if (targetNode) {
+                const orig = node.properties.trixBypasserOriginalModes[hierId] ?? 0;
+                if (targetNode.mode !== orig) {
+                    targetNode.mode = orig;
+                    if (targetNode.setDirtyCanvas) targetNode.setDirtyCanvas(true, true);
+                }
+            }
+            delete node.properties.trixBypasserOriginalModes[hierId];
+        }
+    }
+
+    // 2. Apply modes to current targets (direct + subgraph descendants)
+    let changed = false;
+    for (const [hierId, entry] of effectiveTargets.entries()) {
+        const targetNode = entry.node;
+        const reqMode = entry.mode;
+        if (node.properties.trixBypasserOriginalModes[hierId] === undefined) {
+            node.properties.trixBypasserOriginalModes[hierId] = targetNode.mode;
+        }
+        if (targetNode.mode !== reqMode) {
+            targetNode.mode = reqMode;
+            if (targetNode.setDirtyCanvas) targetNode.setDirtyCanvas(true, true);
+            changed = true;
+        }
+    }
+
+    node._trixLastTargeted = effectiveTargets;
     if (changed && app.canvas) {
         app.canvas.setDirty(true, true);
     }
@@ -3130,12 +3179,16 @@ function _trixInitNode(node) {
     node.onRemoved = function() {
         try {
             const lastTargeted = node._trixLastTargeted || new Map();
-            for (const [id, oldMode] of lastTargeted.entries()) {
-                const targetNode = findNodeById(id);
+            for (const [hierId, prevEntry] of lastTargeted.entries()) {
+                const targetNode = (prevEntry && prevEntry.node && prevEntry.node.mode !== undefined)
+                    ? prevEntry.node
+                    : findNodeById(hierId);
                 if (targetNode) {
-                    const orig = node.properties.trixBypasserOriginalModes[id] ?? 0;
-                    targetNode.mode = orig;
-                    if (targetNode.setDirtyCanvas) targetNode.setDirtyCanvas(true, true);
+                    const orig = node.properties.trixBypasserOriginalModes[hierId] ?? 0;
+                    if (targetNode.mode !== orig) {
+                        targetNode.mode = orig;
+                        if (targetNode.setDirtyCanvas) targetNode.setDirtyCanvas(true, true);
+                    }
                 }
             }
         } catch (e) {
