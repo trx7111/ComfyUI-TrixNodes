@@ -1683,11 +1683,14 @@ function _trixDrawNodeSimple(node, ctx, w_widget, y, h_widget) {
     const headerH = 20;
     const pillW = 75;
     const trashW = 20;
+    const moveBtnW = 30;
     const addGroupBtnW = 28; // +Group button width
-    const addTargetBtnW = w - 2 * margin - 2 * pillW - trashW - addGroupBtnW - 16;
+    const addTargetBtnW = w - 2 * margin - 2 * pillW - trashW - moveBtnW - addGroupBtnW - 24;
     let curY = startY + topGap;
 
     node._trixHitAreas = [];
+    node._trixRowRects = [];
+    node._trixGroupRects = [];
 
     if (!hideControls) {
         // Draw tray background (solid to top and side edges)
@@ -1807,6 +1810,23 @@ function _trixDrawNodeSimple(node, ctx, w_widget, y, h_widget) {
             x: trashX, y: curY, w: trashW, h: headerH
         });
 
+        // --- Move Mode Toggle Button ---
+        const moveX = trashX + trashW + 4;
+        const isMoveMode = !!state.moveMode;
+        ctx.beginPath();
+        ctx.roundRect(moveX, curY, moveBtnW, headerH, 4);
+        ctx.fillStyle = isMoveMode ? "#33789A" : "rgba(255,255,255,0.06)";
+        ctx.fill();
+        ctx.strokeStyle = isMoveMode ? "#6ec4ff" : "rgba(255,255,255,0.1)";
+        ctx.stroke();
+        ctx.fillStyle = isMoveMode ? "#fff" : "#bbb";
+        ctx.font = "9px Arial";
+        ctx.fillText(isMoveMode ? "✓" : "⇅", moveX + moveBtnW / 2, curY + headerH / 2);
+        node._trixHitAreas.push({
+            type: "toggleMoveMode",
+            x: moveX, y: curY, w: moveBtnW, h: headerH
+        });
+
         // --- Pill 2: Mute / Bypass ---
         const pill2X = w - margin - pillW;
         const isMute = state.muteMode === "mute";
@@ -1858,6 +1878,8 @@ function _trixDrawNodeSimple(node, ctx, w_widget, y, h_widget) {
     const isDeleteMode = !hideControls && state.deleteMode;
 
     targets.forEach((target, tIndex) => {
+        // Record row rect for drag insertion computation.
+        node._trixRowRects.push({ list: state.targets, index: tIndex, x: margin, y: rowY, w: w - 2 * margin, h: targetRowH });
         let hasMissing = false;
         if (target.value) {
             const ids = target.value.split(",").map(s => s.trim()).filter(Boolean);
@@ -2076,6 +2098,8 @@ function _trixDrawNodeSimple(node, ctx, w_widget, y, h_widget) {
             }
         }
     }
+    // Draw in-progress drag visuals (only when move mode is on).
+    if (state.moveMode) _trixDrawDragOverlays(node, ctx, w);
     console.log("[Trix Bypasser] _trixDrawNodeSimple populated hitAreas count:", node._trixHitAreas.length);
 }
 
@@ -2102,10 +2126,13 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
     const headerH = 20;
     const pillW = 75;
     const trashW = 20;
-    const addGroupW = w - 2 * margin - 2 * pillW - trashW - 12;
+    const moveBtnW = 30;
+    const addGroupW = w - 2 * margin - 2 * pillW - trashW - moveBtnW - 16;
     let curY = startY + topGap;
 
     node._trixHitAreas = [];
+    node._trixRowRects = [];
+    node._trixGroupRects = [];
 
     if (!hideControls) {
         // Draw tray background (solid to top and side edges)
@@ -2208,6 +2235,23 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
             x: trashX, y: curY, w: trashW, h: headerH
         });
 
+        // --- Move Mode Toggle Button ---
+        const moveX = trashX + trashW + 4;
+        const isMoveMode = !!state.moveMode;
+        ctx.beginPath();
+        ctx.roundRect(moveX, curY, moveBtnW, headerH, 4);
+        ctx.fillStyle = isMoveMode ? "#33789A" : "rgba(255,255,255,0.06)";
+        ctx.fill();
+        ctx.strokeStyle = isMoveMode ? "#6ec4ff" : "rgba(255,255,255,0.1)";
+        ctx.stroke();
+        ctx.fillStyle = isMoveMode ? "#fff" : "#bbb";
+        ctx.font = "9px Arial";
+        ctx.fillText(isMoveMode ? "✓" : "⇅", moveX + moveBtnW / 2, curY + headerH / 2);
+        node._trixHitAreas.push({
+            type: "toggleMoveMode",
+            x: moveX, y: curY, w: moveBtnW, h: headerH
+        });
+
         // --- Pill 2: Mute / Bypass ---
         const pill2X = w - margin - pillW;
         const isMute = state.muteMode === "mute";
@@ -2257,6 +2301,15 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
     groups.forEach((group, gIndex) => {
         const groupHeaderY = curY;
         const groupHeaderH = 24;
+        // Record group header rect for drag (whole-group move).
+        node._trixGroupRects.push({
+            list: groups,
+            index: gIndex,
+            x: margin,
+            y: groupHeaderY,
+            w: w - 2 * margin,
+            h: groupHeaderH
+        });
 
         // Expanded/Collapsed dimensions
         const targets = group.targets;
@@ -2406,6 +2459,8 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
             let rowY = groupHeaderY + groupHeaderH + 3;
             
             targets.forEach((target, tIndex) => {
+                // Record row rect for drag insertion computation.
+                node._trixRowRects.push({ list: group.targets, index: tIndex, x: margin, y: rowY, w: w - 2 * margin, h: targetRowH });
                 let hasMissing = false;
                 if (target.value) {
                     const ids = target.value.split(",").map(s => s.trim()).filter(Boolean);
@@ -2676,6 +2731,8 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
             }
         }
     }
+    // Draw in-progress drag visuals (only when move mode is on).
+    if (state.moveMode) _trixDrawDragOverlays(node, ctx, w);
     console.log("[Trix Bypasser] _trixDrawNode populated hitAreas count:", node._trixHitAreas.length);
 }
 
@@ -3033,6 +3090,210 @@ function _trixRenameTarget(node, groupIndex, targetIndex) {
     });
 }
 
+// =========================================================
+// 5.5 MOVE MODE (drag & drop reordering)
+// =========================================================
+
+// Returns { type: "target"|"group", list: array, index: number, item } for the row at (px, py)
+// or null if no draggable row is under the cursor.
+function _trixFindDragSource(node, px, py) {
+    const state = node.properties.trixBypasserState;
+    const isSimple = (node.type === "TrixBypasserSimple");
+    const rowRects = node._trixRowRects || [];
+    const groupRects = node._trixGroupRects || [];
+
+    // Group headers: dragging the header moves the entire group.
+    for (const r of groupRects) {
+        if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+            return {
+                type: "group",
+                list: state.groups,
+                index: r.index,
+                item: r.list[r.index]
+            };
+        }
+    }
+
+    // Target rows: match against recorded row rects (preferred; covers full row).
+    for (const r of rowRects) {
+        if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+            return {
+                type: "target",
+                list: r.list,
+                index: r.index,
+                item: r.list[r.index]
+            };
+        }
+    }
+
+    // Fallback: hit areas (toggleTarget covers the whole row too).
+    for (const area of node._trixHitAreas) {
+        if (area.type === "toggleTarget" && area.groupIndex !== undefined) {
+            if (px >= area.x && px <= area.x + area.w && py >= area.y && py <= area.y + area.h) {
+                const group = state.groups[area.groupIndex];
+                return {
+                    type: "target",
+                    list: group.targets,
+                    index: area.targetIndex,
+                    item: group.targets[area.targetIndex]
+                };
+            }
+        } else if (area.type === "toggleTarget") {
+            if (px >= area.x && px <= area.x + area.w && py >= area.y && py <= area.y + area.h) {
+                return {
+                    type: "target",
+                    list: state.targets,
+                    index: area.targetIndex,
+                    item: state.targets[area.targetIndex]
+                };
+            }
+        }
+    }
+    return null;
+}
+
+// Compute the insertion index in the given list for cursor y.
+// Walks _trixRowRects (populated during draw) to find the row whose midpoint
+// is just above the cursor.
+function _trixComputeInsertionIndex(node, px, py, list) {
+    const rowRects = node._trixRowRects || [];
+    let idx = 0;
+    for (let i = 0; i < rowRects.length; i++) {
+        const r = rowRects[i];
+        if (r.list !== list) continue;
+        const midY = r.y + r.h / 2;
+        if (py < midY) {
+            idx = r.index;
+            return idx;
+        }
+        idx = r.index + 1;
+    }
+    return idx;
+}
+
+// Apply the drag result by moving the item from fromIndex to toIndex in toList.
+function _trixApplyMove(node) {
+    const drag = node._trixDrag;
+    if (!drag) return;
+    const fromList = drag.fromList;
+    const toList = drag.toList;
+    const fromIndex = drag.fromIndex;
+    let toIndex = drag.toIndex;
+
+    // If dragging within the same list and moving right, adjust so indices stay consistent.
+    if (fromList === toList && fromIndex < toIndex) toIndex -= 1;
+
+    const removed = fromList.splice(fromIndex, 1)[0];
+    if (!removed) {
+        node._trixDrag = null;
+        return;
+    }
+    // Clamp index to list length.
+    if (toIndex > toList.length) toIndex = toList.length;
+    if (toIndex < 0) toIndex = 0;
+    toList.splice(toIndex, 0, removed);
+
+    // Renumber default names in both lists.
+    const renumber = (arr) => {
+        arr.forEach((t, i) => {
+            if (!t.name || /^Target \d+$/.test(t.name)) {
+                t.name = `Target ${i + 1}`;
+            }
+        });
+    };
+    renumber(fromList);
+    if (toList !== fromList) renumber(toList);
+
+    node._trixDrag = null;
+    _trixEnforceLogic(node);
+    node.setDirtyCanvas(true, true);
+    // Persist to workflow JSON by marking the node dirty.
+    const graph = app.graph || (app.canvas && app.canvas.graph);
+    if (graph && typeof graph.setDirtyCanvas === "function") {
+        graph.setDirtyCanvas(true, true);
+    }
+    // Force a widget redraw.
+    const widget = node.widgets?.find(w => w.name === "trix_bypasser_control");
+    widget?.triggerDraw?.();
+}
+
+function _trixMouseMove(node, pos) {
+    const drag = node._trixDrag;
+    if (!drag) return;
+    const [px, py] = pos;
+    drag.lastY = py;
+    const toList = drag.toList;
+    const newIdx = _trixComputeInsertionIndex(node, px, py, toList);
+    drag.toIndex = newIdx;
+    node.setDirtyCanvas(true, true);
+}
+
+function _trixMouseUp(node, pos) {
+    const drag = node._trixDrag;
+    if (!drag) return;
+    const [px, py] = pos;
+    const toList = drag.toList;
+    drag.toIndex = _trixComputeInsertionIndex(node, px, py, toList);
+    _trixApplyMove(node);
+}
+
+function _trixCancelDrag(node) {
+    if (node._trixDrag) {
+        node._trixDrag = null;
+        node.setDirtyCanvas(true, true);
+    }
+}
+
+// Draw the in-progress drag visuals: ghost highlight on the grabbed row +
+// insertion line at the current drop position.
+function _trixDrawDragOverlays(node, ctx, w) {
+    const drag = node._trixDrag;
+    if (!drag) return;
+    const state = node.properties.trixBypasserState;
+    const rowRects = node._trixRowRects || [];
+
+    // Highlight the row currently being dragged (the source).
+    for (const r of rowRects) {
+        if (r.list === drag.fromList && r.index === drag.fromIndex) {
+            ctx.save();
+            ctx.globalAlpha = 0.35;
+            ctx.fillStyle = "#33789A";
+            ctx.beginPath();
+            ctx.roundRect(r.x, r.y, r.w, r.h, 4);
+            ctx.fill();
+            ctx.restore();
+            break;
+        }
+    }
+
+    // Draw insertion line at the target index (only when dragging over a
+    // list different from the source, or at a different index).
+    const margin = 10;
+    let insertY = null;
+    for (const r of rowRects) {
+        if (r.list === drag.toList) {
+            if (drag.toIndex === r.index) {
+                insertY = r.y;
+                break;
+            } else if (drag.toIndex > r.index) {
+                insertY = r.y + r.h;
+            }
+        }
+    }
+    if (insertY !== null) {
+        ctx.save();
+        ctx.strokeStyle = "#6ec4ff";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(margin, insertY);
+        ctx.lineTo(w - margin, insertY);
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// =========================================================
 function _trixMouseDown(node, e, pos) {
     if (node.flags?.collapsed || node.collapsed || node.flags?.hidden) return false;
     if (!node._trixHitAreas) return false;
@@ -3042,10 +3303,51 @@ function _trixMouseDown(node, e, pos) {
     const state = node.properties.trixBypasserState;
     const isSimple = (node.type === "TrixBypasserSimple");
 
+    // If move mode is active, treat any hit on a row as a drag start.
+    if (state.moveMode) {
+        // Always allow toggling off (and other header buttons) while in move mode.
+        for (const area of node._trixHitAreas) {
+            if (px >= area.x && px <= area.x + area.w && py >= area.y && py <= area.y + area.h) {
+                if (area.type === "toggleMoveMode") {
+                    state.moveMode = false;
+                    node._trixDrag = null;
+                    node.setDirtyCanvas(true, true);
+                    return true;
+                }
+                break;
+            }
+        }
+        const dragSource = _trixFindDragSource(node, px, py);
+        if (dragSource) {
+            node._trixDrag = {
+                type: dragSource.type,
+                fromList: dragSource.list,
+                fromIndex: dragSource.index,
+                toList: dragSource.list,
+                toIndex: dragSource.index,
+                startX: px,
+                startY: py,
+                lastY: py,
+                item: dragSource.item
+            };
+            node.setDirtyCanvas(true, true);
+            return true;
+        }
+        // No draggable row under the cursor; swallow the click so normal
+        // actions don't fire while in move mode.
+        return true;
+    }
+
     for (const area of node._trixHitAreas) {
         if (px >= area.x && px <= area.x + area.w && py >= area.y && py <= area.y + area.h) {
             
-            // 1. Single / Multi Mode Switch
+            // 0. Move Mode Toggle (handled first so we can enter drag mode)
+            if (area.type === "toggleMoveMode") {
+                state.moveMode = !state.moveMode;
+                node._trixDrag = null;
+                node.setDirtyCanvas(true, true);
+                return true;
+            }
             if (area.type === "selectMode") {
                 state.selectMode = area.mode;
                 if (area.mode === "single") {
@@ -3439,25 +3741,25 @@ function _trixInitNode(node) {
 
     node.properties = node.properties || {};
     const isSimple = (node.type === "TrixBypasserSimple");
-    if (isSimple) {
-        if (!node.properties.trixBypasserState) {
+    if (!node.properties.trixBypasserState) {
+        if (isSimple) {
             node.properties.trixBypasserState = {
-                version: 1,
+                version: 2,
                 selectMode: "multi",
                 muteMode: "bypass",
                 deleteMode: false,
+                moveMode: false,
                 targets: [
                     { name: "Target 1", value: "", active: true }
                 ]
             };
-        }
-    } else {
-        if (!node.properties.trixBypasserState) {
+        } else {
             node.properties.trixBypasserState = {
-                version: 1,
+                version: 2,
                 selectMode: "multi",
                 muteMode: "bypass",
                 deleteMode: false,
+                moveMode: false,
                 groups: [
                     {
                         id: "A",
@@ -3470,6 +3772,11 @@ function _trixInitNode(node) {
                     }
                 ]
             };
+        }
+    } else {
+        // Bump version for older states that don't have moveMode.
+        if (!node.properties.trixBypasserState.moveMode) {
+            node.properties.trixBypasserState.moveMode = false;
         }
     }
     if (!node.properties.trixBypasserOriginalModes) {
@@ -3496,11 +3803,12 @@ function _trixInitNode(node) {
         const isVueMode = !!(window.LiteGraph?.vueNodesMode || app.canvas?.vueNodesMode || (typeof LGraphCanvas !== "undefined" && LGraphCanvas.vueNodesMode));
         if (!isVueMode) return; // Skip widget rendering in LiteGraph mode
         
-        // Hook Vue mode hover and click listeners
+    // Hook Vue mode hover and click listeners
         if (ctx.canvas && ctx.canvas !== app.canvas?.canvas && !ctx.canvas._trixHoverHooked) {
             ctx.canvas._trixHoverHooked = true;
             ctx.canvas.addEventListener("pointermove", (e) => {
                 _trixHover(node, e.offsetX, e.offsetY);
+                _trixMouseMove(node, [e.offsetX, e.offsetY]);
             });
             ctx.canvas.addEventListener("pointerleave", () => {
                 _trixHover(node, -1, -1);
@@ -3512,6 +3820,13 @@ function _trixInitNode(node) {
                     e.stopPropagation();
                     e.preventDefault();
                 }
+            });
+            // Pointer up / leave: complete drag
+            ctx.canvas.addEventListener("pointerup", (e) => {
+                _trixMouseUp(node, [e.offsetX, e.offsetY]);
+            });
+            ctx.canvas.addEventListener("pointercancel", (e) => {
+                _trixCancelDrag(node);
             });
         }
         
@@ -3599,8 +3914,26 @@ function _trixInitNode(node) {
         if (this.flags?.collapsed || this.collapsed || this.flags?.hidden) return;
         
         _trixHover(this, pos[0], pos[1]);
+        _trixMouseMove(this, pos);
 
         if (origMouseMove) origMouseMove.apply(this, arguments);
+    };
+
+    // Complete drag on mouse up (legacy LiteGraph path)
+    const origMouseUp = node.onMouseUp;
+    node.onMouseUp = function(e, pos, canvas) {
+        const isVueMode = !!(window.LiteGraph?.vueNodesMode || app.canvas?.vueNodesMode || (typeof LGraphCanvas !== "undefined" && LGraphCanvas.vueNodesMode));
+        _trixMouseUp(this, pos);
+        if (isVueMode) { if (origMouseUp) return origMouseUp.apply(this, arguments); return; }
+        if (origMouseUp) return origMouseUp.apply(this, arguments);
+    };
+
+    // Cancel drag if pointer leaves the node (legacy path)
+    const origMouseLeave = node.onMouseLeave;
+    node.onMouseLeave = function(e, pos, canvas) {
+        const isVueMode = !!(window.LiteGraph?.vueNodesMode || app.canvas?.vueNodesMode || (typeof LGraphCanvas !== "undefined" && LGraphCanvas.vueNodesMode));
+        if (!isVueMode) _trixCancelDrag(this);
+        if (origMouseLeave) return origMouseLeave.apply(this, arguments);
     };
 
     const origOnRemoved = node.onRemoved;
