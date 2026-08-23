@@ -2301,16 +2301,6 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
     groups.forEach((group, gIndex) => {
         const groupHeaderY = curY;
         const groupHeaderH = 24;
-        // Record group header rect for drag (whole-group move).
-        node._trixGroupRects.push({
-            list: groups,
-            index: gIndex,
-            x: margin,
-            y: groupHeaderY,
-            w: w - 2 * margin,
-            h: groupHeaderH
-        });
-
         // Expanded/Collapsed dimensions
         const targets = group.targets;
         const targetRowH = 22;
@@ -2319,6 +2309,17 @@ function _trixDrawNode(node, ctx, w_widget, y, h_widget) {
         const containerH = targets.length * targetRowH + addTargetH + 6;
         
         const cardH = group.collapsed ? groupHeaderH : (groupHeaderH + containerH);
+
+        // Record group header rect for drag (whole-group move) + full card extent.
+        node._trixGroupRects.push({
+            list: groups,
+            index: gIndex,
+            x: margin,
+            y: groupHeaderY,
+            w: w - 2 * margin,
+            h: groupHeaderH,
+            fullH: cardH  // full card height (header + expanded rows)
+        });
 
         // Highlight color on hover (using semi-transparent black)
         const isHovered = (gIndex === node._trixHoveredGroupIndex);
@@ -3193,16 +3194,20 @@ function _trixApplyMove(node) {
     if (toIndex < 0) toIndex = 0;
     toList.splice(toIndex, 0, removed);
 
-    // Renumber default names in both lists.
-    const renumber = (arr) => {
+    // Renumber default target names in affected lists (skip group arrays).
+    const renumberTargets = (arr) => {
         arr.forEach((t, i) => {
             if (!t.name || /^Target \d+$/.test(t.name)) {
                 t.name = `Target ${i + 1}`;
             }
         });
     };
-    renumber(fromList);
-    if (toList !== fromList) renumber(toList);
+    if (Array.isArray(fromList) && fromList !== node.properties.trixBypasserState.groups) {
+        renumberTargets(fromList);
+    }
+    if (toList !== fromList && Array.isArray(toList) && toList !== node.properties.trixBypasserState.groups) {
+        renumberTargets(toList);
+    }
 
     node._trixDrag = null;
     _trixEnforceLogic(node);
@@ -3222,18 +3227,91 @@ function _trixMouseMove(node, pos) {
     if (!drag) return;
     const [px, py] = pos;
     drag.lastY = py;
-    const toList = drag.toList;
-    const newIdx = _trixComputeInsertionIndex(node, px, py, toList);
-    drag.toIndex = newIdx;
+    const state = node.properties.trixBypasserState;
+    const groupRects = node._trixGroupRects || [];
+
+    if (drag.type === "group") {
+        // For group drags, compute insertion index among group cards.
+        drag.toIndex = _trixComputeGroupInsertionIndex(node, py, state.groups);
+    } else {
+        // For target drags, detect which list (flat or group) the cursor is over.
+        const foundList = _trixFindListAtCursor(node, py, state);
+        if (foundList) {
+            drag.toList = foundList;
+            drag.toIndex = _trixComputeInsertionIndex(node, px, py, drag.toList);
+        } else {
+            // Cursor is outside any list area; keep the last valid position.
+            drag.toIndex = _trixComputeInsertionIndex(node, px, py, drag.toList);
+        }
+    }
     node.setDirtyCanvas(true, true);
+}
+
+// Detect which target list the cursor y falls into: flat list or a group.
+// Returns the list if found, or null if the cursor is not over any list area.
+function _trixFindListAtCursor(node, py, state) {
+    const groupRects = node._trixGroupRects || [];
+    // Check group cards (full height).
+    for (const g of groupRects) {
+        if (py >= g.y && py < g.y + (g.fullH ?? g.h)) {
+            // Cursor is inside this group card → targets belong to this group.
+            return state.groups[g.index].targets;
+        }
+    }
+    // For the simple (flat) node, check if cursor is in the flat list area.
+    // The flat list rows are in _trixRowRects with list === state.targets.
+    if (node.type === "TrixBypasserSimple" && state.targets) {
+        const rowRects = node._trixRowRects || [];
+        for (const r of rowRects) {
+            if (r.list === state.targets && py >= r.y && py < r.y + r.h) {
+                return state.targets;
+            }
+        }
+        // If cursor is in the flat list area even between rows, return it.
+        // Find the y-range of the flat list.
+        let flatTop = Infinity, flatBottom = -Infinity;
+        for (const r of rowRects) {
+            if (r.list === state.targets) {
+                flatTop = Math.min(flatTop, r.y);
+                flatBottom = Math.max(flatBottom, r.y + r.h);
+            }
+        }
+        if (flatTop < flatBottom && py >= flatTop && py <= flatBottom) {
+            return state.targets;
+        }
+    }
+    return null;
+}
+
+// Compute the insertion index among group cards for a group drag.
+function _trixComputeGroupInsertionIndex(node, py, groups) {
+    const groupRects = node._trixGroupRects || [];
+    let idx = groups.length;
+    for (let i = 0; i < groupRects.length; i++) {
+        const g = groupRects[i];
+        const midY = g.y + (g.fullH ?? g.h) / 2;
+        if (py < midY) {
+            return g.index;
+        }
+        idx = g.index + 1;
+    }
+    return idx;
 }
 
 function _trixMouseUp(node, pos) {
     const drag = node._trixDrag;
     if (!drag) return;
     const [px, py] = pos;
-    const toList = drag.toList;
-    drag.toIndex = _trixComputeInsertionIndex(node, px, py, toList);
+    const state = node.properties.trixBypasserState;
+    if (drag.type === "group") {
+        drag.toIndex = _trixComputeGroupInsertionIndex(node, py, state.groups);
+    } else {
+        const foundList = _trixFindListAtCursor(node, py, state);
+        if (foundList) {
+            drag.toList = foundList;
+        }
+        drag.toIndex = _trixComputeInsertionIndex(node, px, py, drag.toList);
+    }
     _trixApplyMove(node);
 }
 
@@ -3244,39 +3322,70 @@ function _trixCancelDrag(node) {
     }
 }
 
-// Draw the in-progress drag visuals: ghost highlight on the grabbed row +
+// Draw the in-progress drag visuals: ghost highlight on the grabbed row/card +
 // insertion line at the current drop position.
 function _trixDrawDragOverlays(node, ctx, w) {
     const drag = node._trixDrag;
     if (!drag) return;
     const state = node.properties.trixBypasserState;
     const rowRects = node._trixRowRects || [];
+    const groupRects = node._trixGroupRects || [];
+    const margin = 10;
 
-    // Highlight the row currently being dragged (the source).
-    for (const r of rowRects) {
-        if (r.list === drag.fromList && r.index === drag.fromIndex) {
+    // Highlight the source (row or group card).
+    if (drag.type === "group") {
+        // Highlight the group card being dragged.
+        const srcCard = groupRects.find(g => g.index === drag.fromIndex);
+        if (srcCard) {
             ctx.save();
             ctx.globalAlpha = 0.35;
             ctx.fillStyle = "#33789A";
             ctx.beginPath();
-            ctx.roundRect(r.x, r.y, r.w, r.h, 4);
+            ctx.roundRect(srcCard.x, srcCard.y, srcCard.w, srcCard.fullH ?? srcCard.h, 4);
             ctx.fill();
             ctx.restore();
-            break;
+        }
+    } else {
+        for (const r of rowRects) {
+            if (r.list === drag.fromList && r.index === drag.fromIndex) {
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = "#33789A";
+                ctx.beginPath();
+                ctx.roundRect(r.x, r.y, r.w, r.h, 4);
+                ctx.fill();
+                ctx.restore();
+                break;
+            }
         }
     }
 
-    // Draw insertion line at the target index (only when dragging over a
-    // list different from the source, or at a different index).
-    const margin = 10;
+    // Draw insertion line.
     let insertY = null;
-    for (const r of rowRects) {
-        if (r.list === drag.toList) {
-            if (drag.toIndex === r.index) {
-                insertY = r.y;
+    if (drag.type === "group") {
+        // For group drags, insertion is between group cards.
+        for (const g of groupRects) {
+            if (drag.toIndex === g.index) {
+                insertY = g.y;
                 break;
-            } else if (drag.toIndex > r.index) {
-                insertY = r.y + r.h;
+            } else if (drag.toIndex > g.index) {
+                insertY = g.y + (g.fullH ?? g.h);
+            }
+        }
+        // If toIndex equals groups.length, draw at the bottom of the last card.
+        if (insertY === null && drag.toIndex >= groupRects.length && groupRects.length > 0) {
+            const last = groupRects[groupRects.length - 1];
+            insertY = last.y + (last.fullH ?? last.h);
+        }
+    } else {
+        for (const r of rowRects) {
+            if (r.list === drag.toList) {
+                if (drag.toIndex === r.index) {
+                    insertY = r.y;
+                    break;
+                } else if (drag.toIndex > r.index) {
+                    insertY = r.y + r.h;
+                }
             }
         }
     }
