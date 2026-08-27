@@ -29,7 +29,7 @@ An elegant, premium, high-performance workflow management node suite for [ComfyU
 ## 📦 Nodes Overview
 
 ### 1. Visual Representation of the Nodes
-The package includes two main bypasser nodes: `Trix Bypass Nodes w Groups by ID` (with group grouping and collapsible decks) and `Trix Bypass Nodes by ID` (streamlined linear list).
+The package includes two main bypasser nodes: `🌊Bypass Nodes w Groups by ID` (with group grouping and collapsible decks) and `🌊Bypass Nodes by ID` (streamlined linear list).
 
 ![Bypassers Overview](assets/1.jpg)
 

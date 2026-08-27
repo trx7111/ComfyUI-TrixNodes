@@ -1,0 +1,8 @@
+{
+  "lora": "FLUX2\\bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors",
+  "notes": "",
+  "images": [],
+  "imageSize": 140,
+  "textareaHeight": 280,
+  "updatedAt": 1787835152
+}

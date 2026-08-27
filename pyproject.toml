@@ -1,9 +1,16 @@
 [project]
 name = "comfyui-trixnodes"
-description = "An elegant, premium, remote bypass and wire-management nodes suite for ComfyUI."
-version = "1.1.1"
+description = "An elegant, premium workflow management suite with bypassers, LoRA loader, color match, and prompt AIO nodes for ComfyUI."
+version = "1.9.1"
 license = { file = "LICENSE.txt" }
-dependencies = []
+dependencies = [
+    "ctranslate2>=3.17.0",
+    "huggingface_hub>=0.16.0",
+    "deep_translator>=1.11.4",
+    "Pillow>=9.0.0",
+    "openpyxl>=3.1.0",
+    "xlsxwriter>=3.0.0",
+]
 
 [project.urls]
 Repository = "https://github.com/trx7111/ComfyUI-TrixNodes"
