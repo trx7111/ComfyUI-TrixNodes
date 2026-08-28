@@ -7,6 +7,7 @@ console.log("[Trix Bypasser] Loading Nodes 2.0 universal DOM architecture v21 (N
 // =========================================================
 const TRIX_CROSS_SVG = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="pointer-events:none;display:block;"><path d="M2.2 2.2L7.8 7.8M7.8 2.2L2.2 7.8"/></svg>`;
 const TRIX_CROSS_SM_SVG = `<svg width="8.5" height="8.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="pointer-events:none;display:block;"><path d="M2.2 2.2L7.8 7.8M7.8 2.2L2.2 7.8"/></svg>`;
+const TRIX_MOVE_SVG = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;display:block;"><path d="M3 8.5V1.5M1 3.5L3 1.5L5 3.5"/><path d="M7 1.5V8.5M5 6.5L7 8.5L9 6.5"/></svg>`;
 
 // =========================================================
 // 2. NODES 2.0 COMPATIBILITY HELPERS
@@ -319,6 +320,37 @@ const TRIX_CSS = `
 .trix-bp-btn-trash.active {
     background: #b34d4d !important;
     border-color: #e66666 !important;
+    color: #ffffff !important;
+}
+
+/* Header Move Mode (Sort) Button */
+.trix-bp-btn-move {
+    width: 22px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: #777;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    line-height: 0;
+    transition: all 0.15s ease;
+    outline: none;
+    flex-shrink: 0;
+    user-select: none;
+    box-sizing: border-box;
+}
+.trix-bp-btn-move:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #aaa;
+}
+.trix-bp-btn-move.active {
+    background: #387aff !important;
+    border-color: #6ea3ff !important;
     color: #ffffff !important;
 }
 
@@ -703,6 +735,43 @@ const TRIX_CSS = `
 .trix-bp-group-card.drag-over-bottom {
     border-bottom: 2px solid #387aff !important;
     box-shadow: 0 2px 6px rgba(56, 122, 255, 0.35);
+}
+
+/* =========================================================
+   MOVE MODE (pointer-based drag & drop sorting)
+   Ported from fix/bypass-subgraph-inner-nodes:
+   "add drag-and-drop move mode for target/group reordering"
+   "support cross-group target drag and group reordering"
+   ========================================================= */
+.trix-bp-row.dragging,
+.trix-bp-group-card.dragging {
+    pointer-events: none !important;
+}
+
+/* Dashed outline: drop a target INTO this group (append / cross-group move) */
+.trix-bp-group-card.drop-into {
+    outline: 2px dashed rgba(56, 122, 255, 0.65) !important;
+    outline-offset: -2px;
+    box-shadow: 0 0 6px rgba(56, 122, 255, 0.35);
+}
+
+/* Grab affordances while Move Mode is active */
+.trix-bp-root[data-move-mode="1"] .trix-bp-row,
+.trix-bp-root[data-move-mode="1"] .trix-bp-group-header,
+.trix-bp-root[data-move-mode="1"] .trix-bp-drag-handle {
+    cursor: grab;
+}
+.trix-bp-root[data-move-mode="1"] .trix-bp-row:active,
+.trix-bp-root[data-move-mode="1"] .trix-bp-drag-handle:active {
+    cursor: grabbing;
+}
+/* Prevent native HTML5 drag from hijacking pointer drag in Move Mode */
+.trix-bp-root[data-move-mode="1"] .trix-bp-drag-handle {
+    -webkit-user-drag: none;
+}
+.trix-bp-root[data-move-mode="1"] .trix-bp-row,
+.trix-bp-root[data-move-mode="1"] .trix-bp-group-header {
+    touch-action: none;
 }
 
 /* =========================================================
@@ -2344,13 +2413,24 @@ export class TrixBypasserDOMRenderer {
         root.addEventListener("click", (e) => {
             const actEl = e.target.closest("[data-act]");
             if (!actEl) return;
+            // Move Mode: swallow every action except the Move Mode toggle itself
+            // (ported from fix/bypass-subgraph-inner-nodes move mode)
+            const clickState = node.properties?.trixBypasserState;
+            if (clickState?.moveMode && actEl.dataset.act !== "toggleMoveMode") {
+                e.stopPropagation();
+                e.preventDefault();
+                return;
+            }
             e.stopPropagation();
             const act = actEl.dataset.act;
             this.handleAction(node, act, actEl, e);
         });
 
-        // Attach native Drag & Drop for reordering
+        // Attach native Drag & Drop for reordering (Edit Mode)
         this._attachDragAndDrop(node, root);
+
+        // Attach pointer-based Drag & Drop (Move Mode ⇅)
+        this._attachPointerDrag(node, root);
 
         // Register DOM Widget
         const widget = node.addDOMWidget("bypasser_dom_ui", "trix_bypasser_dom_widget", root, {
@@ -2665,6 +2745,319 @@ export class TrixBypasserDOMRenderer {
     }
 
     /**
+     * Dedicated Move Mode (⇅): pointer-based drag & drop sorting.
+     * Ported onto the DOM architecture from fix/bypass-subgraph-inner-nodes:
+     *   - "add drag-and-drop move mode for target/group reordering"
+     *   - "support cross-group target drag and group reordering in move mode"
+     * Uses Pointer Events + elementFromPoint hit-testing instead of native
+     * HTML5 DnD, so it behaves identically in Nodes 2.0 (Vue) mode and in
+     * classic LiteGraph DOM overlays. Supports:
+     *   - reordering targets inside a group / flat list
+     *   - moving targets BETWEEN groups (drop on a row or on a group card)
+     *   - reordering whole groups by dragging their header/card
+     */
+    static _attachPointerDrag(node, root) {
+        /**
+         * drag = {
+         *   type: "target" | "group",
+         *   srcGroupIdx, srcTargetIdx,      // source position in state
+         *   el,                             // dragged DOM element
+         *   moved, startX, startY,
+         *   dest: { kind: "row"|"into"|"card", groupIdx, targetIdx, above } | null
+         * }
+         */
+        let drag = null;
+        const isSimple = () => (node.type === "TrixBypasserSimple");
+
+        const clearIndicators = () => {
+            root.querySelectorAll(".trix-bp-row, .trix-bp-group-card").forEach(el => {
+                el.classList.remove("drag-over-top", "drag-over-bottom", "drop-into");
+            });
+        };
+
+        const removeWindowListeners = () => {
+            window.removeEventListener("pointermove", onMove, true);
+            window.removeEventListener("pointerup", onUp, true);
+            window.removeEventListener("pointercancel", onCancel, true);
+            window.removeEventListener("keydown", onKey, true);
+        };
+
+        const cleanup = () => {
+            removeWindowListeners();
+            clearIndicators();
+            if (drag && drag.el) {
+                drag.el.classList.remove("dragging");
+                drag.el.style.pointerEvents = "";
+            }
+            node._trixDragActive = null;
+            drag = null;
+        };
+
+        const onKey = (e) => {
+            if (e.key === "Escape" && drag) {
+                e.preventDefault();
+                e.stopPropagation();
+                cleanup();
+            }
+        };
+
+        // Hit-test the real element under the cursor (dragged element is
+        // excluded because it gets pointer-events: none while dragging).
+        const hitTest = (clientX, clientY) => {
+            const under = document.elementFromPoint(clientX, clientY);
+            if (!under || !root.contains(under)) return null;
+            const row = under.closest(".trix-bp-row");
+            if (row) return { kind: "row", row };
+            const card = under.closest(".trix-bp-group-card");
+            if (card) return { kind: "card", card };
+            const body = under.closest(".trix-bp-body");
+            if (body) return { kind: "body", body };
+            return null;
+        };
+
+        const updateIndicators = (clientX, clientY) => {
+            const state = node.properties?.trixBypasserState;
+            if (!state) return;
+            clearIndicators();
+            drag.dest = null;
+            const hit = hitTest(clientX, clientY);
+            if (!hit) return;
+
+            if (drag.type === "target") {
+                if (hit.kind === "row") {
+                    if (hit.row === drag.el) return;
+                    const rect = hit.row.getBoundingClientRect();
+                    const above = clientY < (rect.top + rect.height / 2);
+                    hit.row.classList.add(above ? "drag-over-top" : "drag-over-bottom");
+                    drag.dest = {
+                        kind: "row",
+                        groupIdx: hit.row.dataset.groupIdx !== undefined ? parseInt(hit.row.dataset.groupIdx) : null,
+                        targetIdx: parseInt(hit.row.dataset.targetIdx),
+                        above
+                    };
+                    return;
+                }
+                // Hovering a group card outside its rows → append into that group
+                // (works for collapsed groups too).
+                if (hit.kind === "card" && !isSimple()) {
+                    const srcCard = drag.el.closest(".trix-bp-group-card");
+                    if (hit.card === srcCard) return;
+                    hit.card.classList.add("drop-into");
+                    drag.dest = { kind: "into", groupIdx: parseInt(hit.card.dataset.groupIdx) };
+                    return;
+                }
+                // Flat list (simple node): nearest row boundary while hovering gaps.
+                if (hit.kind === "body" && isSimple()) {
+                    const rows = Array.from(root.querySelectorAll(".trix-bp-row"));
+                    let destRow = null, above = false;
+                    for (const r of rows) {
+                        const rect = r.getBoundingClientRect();
+                        if (clientY < rect.top + rect.height / 2) { destRow = r; above = true; break; }
+                    }
+                    if (!destRow && rows.length > 0) {
+                        destRow = rows[rows.length - 1];
+                        above = false;
+                    }
+                    if (destRow && destRow !== drag.el) {
+                        destRow.classList.add(above ? "drag-over-top" : "drag-over-bottom");
+                        drag.dest = {
+                            kind: "row",
+                            groupIdx: null,
+                            targetIdx: parseInt(destRow.dataset.targetIdx),
+                            above
+                        };
+                    }
+                    return;
+                }
+            } else if (drag.type === "group") {
+                if (hit.kind === "card") {
+                    if (hit.card === drag.el) return;
+                    const rect = hit.card.getBoundingClientRect();
+                    const above = clientY < (rect.top + rect.height / 2);
+                    hit.card.classList.add(above ? "drag-over-top" : "drag-over-bottom");
+                    drag.dest = { kind: "card", groupIdx: parseInt(hit.card.dataset.groupIdx), above };
+                }
+            }
+        };
+
+        const onMove = (e) => {
+            if (!drag) return;
+            if (!drag.moved) {
+                const dx = e.clientX - drag.startX;
+                const dy = e.clientY - drag.startY;
+                if ((dx * dx + dy * dy) < 16) return; // 4px threshold before drag kicks in
+                drag.moved = true;
+                drag.el.classList.add("dragging");
+                drag.el.style.pointerEvents = "none";
+            }
+            e.preventDefault();
+            updateIndicators(e.clientX, e.clientY);
+        };
+
+        const onUp = (e) => {
+            if (!drag) return;
+            const wasMoved = drag.moved;
+            const dest = drag.dest;
+            const srcType = drag.type;
+            const srcGroupIdx = drag.srcGroupIdx;
+            const srcTargetIdx = drag.srcTargetIdx;
+            cleanup();
+            if (!wasMoved || !dest) return; // simple click or dropped on nothing → no-op
+            this._applyPointerMove(node, srcType, srcGroupIdx, srcTargetIdx, dest);
+        };
+
+        const onCancel = () => {
+            if (drag) cleanup();
+        };
+
+        // Never let native HTML5 drag hijack the gesture in Move Mode.
+        root.addEventListener("dragstart", (e) => {
+            const state = node.properties?.trixBypasserState;
+            if (state?.moveMode) e.preventDefault();
+        });
+
+        root.addEventListener("pointerdown", (e) => {
+            const state = node.properties?.trixBypasserState;
+            if (!state || !state.moveMode) return;
+            if (e.button !== 0 || drag) return;
+            // The Move Mode toggle button stays clickable
+            if (e.target.closest('[data-act="toggleMoveMode"]')) return;
+
+            const rowEl = e.target.closest(".trix-bp-row");
+            const headerEl = e.target.closest(".trix-bp-group-header");
+            const cardEl = e.target.closest(".trix-bp-group-card");
+
+            if (rowEl && rowEl.dataset.targetIdx !== undefined) {
+                drag = {
+                    type: "target",
+                    srcGroupIdx: rowEl.dataset.groupIdx !== undefined ? parseInt(rowEl.dataset.groupIdx) : null,
+                    srcTargetIdx: parseInt(rowEl.dataset.targetIdx),
+                    el: rowEl,
+                    moved: false,
+                    dest: null,
+                    startX: e.clientX,
+                    startY: e.clientY
+                };
+            } else if (!isSimple() && (headerEl || cardEl)) {
+                // Grab the group by its header or any card area outside target rows
+                const card = cardEl || headerEl.closest(".trix-bp-group-card");
+                if (!card || card.dataset.groupIdx === undefined) return;
+                drag = {
+                    type: "group",
+                    srcGroupIdx: parseInt(card.dataset.groupIdx),
+                    srcTargetIdx: null,
+                    el: card,
+                    moved: false,
+                    dest: null,
+                    startX: e.clientX,
+                    startY: e.clientY
+                };
+            } else {
+                return;
+            }
+
+            node._trixDragActive = drag;
+            e.preventDefault();
+            e.stopPropagation();
+            window.addEventListener("pointermove", onMove, true);
+            window.addEventListener("pointerup", onUp, true);
+            window.addEventListener("pointercancel", onCancel, true);
+            window.addEventListener("keydown", onKey, true);
+        });
+    }
+
+    /**
+     * Applies the Move Mode drop result to trixBypasserState and re-renders.
+     * Mirrors the mutation logic of the Edit Mode HTML5 DnD (ondrop) so both
+     * drag systems stay consistent (limits, placeholders, re-lettering).
+     */
+    static _applyPointerMove(node, srcType, srcGroupIdx, srcTargetIdx, dest) {
+        const state = node.properties?.trixBypasserState;
+        if (!state) return;
+        const isSimple = (node.type === "TrixBypasserSimple");
+        let changed = false;
+
+        if (srcType === "group" && !isSimple) {
+            const groups = state.groups || [];
+            const fromIdx = srcGroupIdx;
+            if (!dest || dest.kind !== "card") return;
+            const g = groups[fromIdx];
+            if (!g || dest.groupIdx === fromIdx || isNaN(dest.groupIdx)) return;
+            let insertIdx = dest.above ? dest.groupIdx : dest.groupIdx + 1;
+            if (fromIdx < insertIdx) insertIdx--;
+            const [movedGroup] = groups.splice(fromIdx, 1);
+            groups.splice(insertIdx, 0, movedGroup);
+
+            // Re-index group letters (A, B, C...)
+            const alphabet = "ABCDEFGHIJ";
+            groups.forEach((gr, idx) => {
+                const correctId = alphabet[idx] || String.fromCharCode(65 + idx);
+                if (gr.name === `Group ${gr.id}`) gr.name = `Group ${correctId}`;
+                gr.id = correctId;
+            });
+            changed = true;
+        } else if (srcType === "target") {
+            const srcList = isSimple ? state.targets : (state.groups[srcGroupIdx]?.targets);
+            if (!srcList || srcTargetIdx === null || isNaN(srcTargetIdx)) return;
+            if (!srcList[srcTargetIdx]) return;
+
+            if (isSimple) {
+                // Flat list: reorder only
+                if (!dest || dest.kind !== "row") return;
+                let insertIdx = dest.above ? dest.targetIdx : dest.targetIdx + 1;
+                if (srcTargetIdx < insertIdx) insertIdx--;
+                if (insertIdx === srcTargetIdx) return;
+                const [removed] = srcList.splice(srcTargetIdx, 1);
+                srcList.splice(Math.max(0, Math.min(insertIdx, srcList.length)), 0, removed);
+
+                // Renumber default names in the flat list
+                srcList.forEach((t, idx) => {
+                    if (!t.name || /^Target \d+$/.test(t.name) || /^Group \d+$/.test(t.name)) {
+                        t.name = _trixIsGroupTarget(t) ? `Group ${idx + 1}` : `Target ${idx + 1}`;
+                    }
+                });
+                changed = true;
+            } else {
+                // Grouped node: same-group reorder or cross-group move
+                let destList = null, insertIdx = null;
+                if (dest.kind === "row") {
+                    const destGroup = state.groups[dest.groupIdx];
+                    if (!destGroup || dest.targetIdx === null || isNaN(dest.targetIdx)) return;
+                    destList = destGroup.targets;
+                    insertIdx = dest.above ? dest.targetIdx : dest.targetIdx + 1;
+                } else if (dest.kind === "into") {
+                    const destGroup = state.groups[dest.groupIdx];
+                    if (!destGroup) return;
+                    destList = destGroup.targets;
+                    insertIdx = destList.length;
+                } else {
+                    return;
+                }
+                if (!destList) return;
+
+                if (destList === srcList) {
+                    if (srcTargetIdx < insertIdx) insertIdx--;
+                    if (insertIdx === srcTargetIdx) return; // same slot → no-op
+                } else {
+                    if (destList.length >= 10) return; // per-group targets limit
+                }
+
+                const [removed] = srcList.splice(srcTargetIdx, 1);
+                if (srcList.length === 0) {
+                    srcList.push({ value: "", active: true, kind: "nodes" });
+                }
+                destList.splice(Math.max(0, Math.min(insertIdx, destList.length)), 0, removed);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            _trixEnforceLogic(node);
+            TrixBypasserDOMRenderer.render(node, true);
+        }
+    }
+
+    /**
      * Calculates height of the DOM content mathematically and deterministically.
      * Values derived from exact CSS geometry:
      *   Root: 3px pad-top + header(27px) + 2px hdr-margin + 3px flex-gap + 6px pad-bottom = 41px base
@@ -2845,9 +3238,23 @@ export class TrixBypasserDOMRenderer {
             return;
         }
 
-        // 5. Toggle Delete Mode
+        // 5. Toggle Delete Mode (Edit Mode)
         if (act === "toggleDeleteMode") {
             state.deleteMode = !state.deleteMode;
+            // Edit Mode and Move Mode are mutually exclusive
+            if (state.deleteMode) state.moveMode = false;
+            this.render(node, false);
+            return;
+        }
+
+        // 5b. Toggle Move Mode (drag & drop sorting of targets/groups)
+        if (act === "toggleMoveMode") {
+            state.moveMode = !state.moveMode;
+            if (state.moveMode) {
+                // Edit Mode and Move Mode are mutually exclusive
+                state.deleteMode = false;
+                node._trixDragActive = null;
+            }
             this.render(node, false);
             return;
         }
@@ -3061,6 +3468,9 @@ export class TrixBypasserDOMRenderer {
         const root = node._trixDomRoot;
         if (!root) return;
         if (!node.properties || !node.properties.trixBypasserState) return;
+        // Never rebuild the DOM in the middle of a Move Mode pointer drag
+        // (element references and drag indicators would go stale)
+        if (node._trixDragActive) return;
 
         const state = node.properties.trixBypasserState;
         const isSimple = (node.type === "TrixBypasserSimple");
@@ -3068,6 +3478,7 @@ export class TrixBypasserDOMRenderer {
         const isSingle = (state.selectMode === "single");
         const isMute = (state.muteMode === "mute");
         const isDeleteMode = !!state.deleteMode;
+        const isMoveMode = !!state.moveMode;
 
         // Perform read-only sync of partial states
         _trixSyncTogglesFromNodes(node);
@@ -3114,6 +3525,9 @@ export class TrixBypasserDOMRenderer {
                     <button class="trix-bp-btn-trash ${isDeleteMode ? 'active' : ''}" data-act="toggleDeleteMode" title="Toggle Edit Mode (Reorder & Delete)">
                         ${TRIX_CROSS_SVG}
                     </button>
+                    <button class="trix-bp-btn-move ${isMoveMode ? 'active' : ''}" data-act="toggleMoveMode" title="Toggle Move Mode (drag targets & groups to sort, move between groups)">
+                        ${TRIX_MOVE_SVG}
+                    </button>
                     <div class="trix-bp-pill">
                         <button class="trix-bp-pill-btn ${isMute ? 'active' : ''}" data-act="muteMode" data-mode="mute" title="Mute Mode">
                             <span class="lbl-full">Mute</span>
@@ -3155,7 +3569,7 @@ export class TrixBypasserDOMRenderer {
 
                 html += `
                     <div class="trix-bp-row" data-target-idx="${tIdx}" ${isDeleteMode ? 'draggable="true"' : ''}>
-                        ${isDeleteMode ? `<span class="trix-bp-drag-handle" data-target-idx="${tIdx}" draggable="true" title="Drag to reorder">⠿</span>` : ''}
+                        ${(isDeleteMode || isMoveMode) ? `<span class="trix-bp-drag-handle" data-target-idx="${tIdx}" ${isDeleteMode ? 'draggable="true"' : ''} title="Drag to reorder">⠿</span>` : ''}
                         <div class="trix-bp-row-label ${isGroupRow ? 'group-kind' : ''}" data-act="renameTarget" data-target-idx="${tIdx}" title="Click to rename">
                             ${displayLabel}
                         </div>
@@ -3188,7 +3602,7 @@ export class TrixBypasserDOMRenderer {
                 html += `
                     <div class="trix-bp-group-card" data-group-idx="${gIdx}" ${isDeleteMode ? 'draggable="true"' : ''}>
                         <div class="trix-bp-group-header" data-act="toggleGroupCollapse" data-group-idx="${gIdx}" ${isDeleteMode ? 'draggable="true"' : ''} title="Click to expand/collapse group">
-                            ${isDeleteMode ? `<span class="trix-bp-drag-handle group-handle" data-group-idx="${gIdx}" draggable="true" title="Drag to reorder group">⠿</span>` : ''}
+                            ${(isDeleteMode || isMoveMode) ? `<span class="trix-bp-drag-handle group-handle" data-group-idx="${gIdx}" ${isDeleteMode ? 'draggable="true"' : ''} title="Drag to reorder group">⠿</span>` : ''}
                             <div class="trix-bp-group-arrow">
                                 ${group.collapsed ? '▶' : '▼'}
                             </div>
@@ -3222,7 +3636,7 @@ export class TrixBypasserDOMRenderer {
 
                                     return `
                                         <div class="trix-bp-row" data-group-idx="${gIdx}" data-target-idx="${tIdx}" ${isDeleteMode ? 'draggable="true"' : ''}>
-                                            ${isDeleteMode ? `<span class="trix-bp-drag-handle" data-group-idx="${gIdx}" data-target-idx="${tIdx}" draggable="true" title="Drag to reorder target">⠿</span>` : ''}
+                                            ${(isDeleteMode || isMoveMode) ? `<span class="trix-bp-drag-handle" data-group-idx="${gIdx}" data-target-idx="${tIdx}" ${isDeleteMode ? 'draggable="true"' : ''} title="Drag to reorder target">⠿</span>` : ''}
                                             <div class="trix-bp-row-label ${isGroupRow ? 'group-kind' : ''}" data-act="renameTarget" data-group-idx="${gIdx}" data-target-idx="${tIdx}" title="Click to rename">
                                                 ${displayLabel}
                                             </div>
@@ -3255,6 +3669,8 @@ export class TrixBypasserDOMRenderer {
         }
 
         root.innerHTML = html;
+        // Reflect Move Mode on the root for CSS (grab cursors, user-drag off)
+        root.dataset.moveMode = isMoveMode ? "1" : "0";
         if (isStructural) {
             this.fitNode(node, true);
         }
@@ -3277,6 +3693,7 @@ function _trixInitNode(node) {
                 selectMode: "multi",
                 muteMode: "bypass",
                 deleteMode: false,
+                moveMode: false,
                 targets: [
                     { name: "Target 1", value: "", active: true, kind: "nodes" }
                 ]
@@ -3289,6 +3706,7 @@ function _trixInitNode(node) {
                 selectMode: "multi",
                 muteMode: "bypass",
                 deleteMode: false,
+                moveMode: false,
                 groups: [
                     {
                         id: "A",
@@ -3302,6 +3720,11 @@ function _trixInitNode(node) {
                 ]
             };
         }
+    }
+    // Migration: older saved workflows have no moveMode flag
+    // (Move Mode ported from fix/bypass-subgraph-inner-nodes)
+    if (node.properties.trixBypasserState && node.properties.trixBypasserState.moveMode === undefined) {
+        node.properties.trixBypasserState.moveMode = false;
     }
     if (!node.properties.trixBypasserOriginalModes) {
         node.properties.trixBypasserOriginalModes = {};
@@ -3323,6 +3746,7 @@ function _trixInitNode(node) {
     if (!node._trixSyncInterval) {
         node._trixSyncInterval = setInterval(() => {
             if (!node._trixDomRoot || !node._trixDomRoot.isConnected) return;
+            if (node._trixDragActive) return; // do not re-render during Move Mode drag
             if (_trixSyncTogglesFromNodes(node)) {
                 TrixBypasserDOMRenderer.render(node, false);
             }
