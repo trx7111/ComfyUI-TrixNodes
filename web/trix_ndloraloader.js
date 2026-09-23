@@ -908,9 +908,17 @@ class OverlayService {
     overlay.addEventListener("click", (event) => {
       if (event.target === overlay) closeOverlay();
     });
+    const splitSearchTokens = (raw) => (raw || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const itemMatchesQuery = (item, tokens) => {
+      if (!tokens.length) return true;
+      const label = (item.label || "").toLowerCase();
+      const path = (item.id || "").toLowerCase();
+      return tokens.every((token) => label.includes(token) || path.includes(token));
+    };
     const getFilteredItems = () => {
       const query = (search.value || "").trim().toLowerCase();
-      const termFiltered = query ? items.filter((item) => item.label.toLowerCase().includes(query)) : items;
+      const tokens = splitSearchTokens(search.value);
+      const termFiltered = query ? items.filter((item) => itemMatchesQuery(item, tokens)) : items;
       let filtered = termFiltered;
       if (folderFeatureEnabled && activeFolders.size > 0) {
         filtered = termFiltered.filter((item) => {
@@ -1056,7 +1064,8 @@ class OverlayService {
     const render = (term) => {
       list.innerHTML = "";
       const query = (term || "").trim().toLowerCase();
-      const termFiltered = query ? items.filter((item) => item.label.toLowerCase().includes(query)) : items;
+      const tokens = splitSearchTokens(term);
+      const termFiltered = query ? items.filter((item) => itemMatchesQuery(item, tokens)) : items;
       if (folderFeatureEnabled) {
         const folderCounts = {};
         termFiltered.forEach((item) => {
