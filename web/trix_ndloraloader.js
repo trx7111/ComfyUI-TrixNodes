@@ -5274,15 +5274,11 @@ const _NodeEnhancerExtension = class _NodeEnhancerExtension {
       } else if (widget.options && "values" in widget.options) {
         delete widget.options.values;
       }
-      if ("hidden" in original) {
-        if (original.hidden === void 0) {
-          delete widget.hidden;
-        } else {
-          widget.hidden = original.hidden;
-        }
-      } else {
-        delete widget.hidden;
-      }
+      // New frontend (>= 1.5x): widget.hidden is a store-backed accessor on
+      // BaseWidget.prototype, so `delete widget.hidden` is a no-op and the
+      // widget stays hidden forever after disabling ND Super Selector.
+      // Assign explicitly instead (works for class widgets and plain objects).
+      widget.hidden = original.hidden === true;
       delete widget._ndPlaceholder;
       delete widget.last_y;
       delete widget.last_height;

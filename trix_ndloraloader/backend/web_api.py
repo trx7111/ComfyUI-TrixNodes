@@ -25,7 +25,12 @@ async def get_loras(request):
 
 
 async def get_files(request):
-    """Generic file lister using ComfyUI folder_paths (e.g., folder_name=loras|vae|checkpoints)"""
+    """Generic file lister using ComfyUI folder_paths (e.g., folder_name=loras|vae|checkpoints)
+
+    Uses folder_paths.get_filename_list() so the listing matches the standard
+    ComfyUI widgets exactly: recursive subfolders, symlinked directories
+    (followlinks=True), extra_model_paths.yaml entries and ComfyUI caching.
+    """
     try:
         folder_name = request.rel_url.query.get("folder_name")
         ext_param = request.rel_url.query.get("extensions", "")
@@ -37,47 +42,60 @@ async def get_files(request):
         if folder_paths is None:
             return web.json_response({"error": "folder_paths unavailable", "files": []}, status=500)
 
-        # Map legacy names and resolve directories
         mapped = folder_paths.map_legacy(folder_name)
-        dirs, supported = folder_paths.folder_names_and_paths.get(mapped, ([], set()))
-        if not dirs:
-            # try direct
-            dirs, supported = folder_paths.folder_names_and_paths.get(folder_name, ([], set()))
 
-        # Filter extensions
-        if extensions:
-            supported = set([e.lower() for e in extensions])
-
-        out_files = []
-        for d in dirs:
-            if not os.path.isdir(d):
+        # Resolve the file list exactly like the standard ComfyUI widgets do.
+        list_key = None
+        all_names = []
+        for key in (mapped, folder_name):
+            if not key:
                 continue
             try:
-                # Recurse into subfolders
-                for root, _, files in os.walk(d):
-                    for name in files:
-                        fp = os.path.join(root, name)
-                        if not os.path.isfile(fp):
-                            continue
-                        _, ext = os.path.splitext(name)
-                        if supported and ext.lower() not in supported and supported != {""}:
-                            continue
-                        st = os.stat(fp)
-                        out_files.append({
-                            "name": name,
-                            "path": os.path.relpath(fp, d).replace("\\", "/"),
-                            "extension": ext.lower(),
-                            "size": st.st_size,
-                            "modified": st.st_mtime
-                        })
+                names = folder_paths.get_filename_list(key)
             except Exception:
+                names = []
+            if names:
+                list_key = key
+                all_names = list(names)
+                break
+
+        out_files = []
+        for name in all_names:
+            if not isinstance(name, str) or not name:
                 continue
+            relative = name.replace("\\", "/")
+            base = relative.rsplit("/", 1)[-1]
+            _, ext = os.path.splitext(base)
+            if extensions and ext.lower() not in extensions:
+                continue
+            entry = {
+                "name": base,
+                "path": relative,
+                "relative_path": relative,
+                "extension": ext.lower(),
+                "size": None,
+                "modified": None
+            }
+            full_path = None
+            try:
+                get_full_path = getattr(folder_paths, "get_full_path", None)
+                if callable(get_full_path) and list_key:
+                    full_path = get_full_path(list_key, name)
+            except Exception:
+                full_path = None
+            if full_path:
+                try:
+                    st = os.stat(full_path)
+                    entry["size"] = st.st_size
+                    entry["modified"] = st.st_mtime
+                except (OSError, IOError):
+                    pass
+            out_files.append(entry)
 
         out_files.sort(key=lambda x: x["name"].lower())
         return web.json_response({"files": out_files, "total": len(out_files)})
     except Exception as e:
         return web.json_response({"error": str(e), "files": []}, status=500)
-
 
 async def get_templates(request):
     """Get list of available templates or a specific template by query param"""

@@ -46,7 +46,11 @@ class FileAPI:
     @staticmethod
     def get_files_for_folder(folder_name: str, extensions: List[str]) -> Dict[str, Any]:
         """
-        Get files for a specific ComfyUI folder
+        Get files for a specific ComfyUI folder.
+
+        Uses folder_paths.get_filename_list() so the listing matches the
+        standard ComfyUI widgets: recursive subfolders, symlinked directories
+        and extra_model_paths.yaml entries.
 
         Args:
             folder_name: Name of the ComfyUI folder (e.g., 'checkpoints', 'vae')
@@ -56,63 +60,61 @@ class FileAPI:
             Dict with 'files' key containing list of file info
         """
         try:
-            # Get folder paths from ComfyUI
             if folder_name not in folder_paths.folder_names_and_paths:
                 return {'error': f'Unknown folder type: {folder_name}', 'files': []}
 
             mapped_name = folder_paths.map_legacy(folder_name)
-            folder_paths_list, supported_extensions = folder_paths.folder_names_and_paths.get(mapped_name, ([], set()))
-            if not folder_paths_list:
-                # Try direct name as fallback
-                folder_paths_list, supported_extensions = folder_paths.folder_names_and_paths.get(folder_name, ([], set()))
+            extensions = [e.lower() for e in (extensions or []) if e]
 
-            # Filter extensions if specified
-            if extensions:
-                supported_extensions = set(supported_extensions) & set(extensions)
+            # Resolve the file list exactly like the standard ComfyUI widgets do.
+            list_key = None
+            all_names = []
+            for key in (mapped_name, folder_name):
+                if not key:
+                    continue
+                try:
+                    names = folder_paths.get_filename_list(key)
+                except Exception:
+                    names = []
+                if names:
+                    list_key = key
+                    all_names = list(names)
+                    break
 
             all_files: List[Dict[str, Any]] = []
-
-            # Scan each folder path
-            for folder_path in folder_paths_list:
-                if not os.path.exists(folder_path):
+            for name in all_names:
+                if not isinstance(name, str) or not name:
                     continue
-
+                relative = name.replace("\\", "/")
+                base = relative.rsplit("/", 1)[-1]
+                _, ext = os.path.splitext(base)
+                if extensions and ext.lower() not in extensions:
+                    continue
+                entry = {
+                    'name': base,
+                    'path': relative,
+                    'relative_path': relative,
+                    'extension': ext.lower(),
+                    'size': None,
+                    'modified': None
+                }
+                full_path = None
                 try:
-                    for filename in os.listdir(folder_path):
-                        filepath = os.path.join(folder_path, filename)
+                    get_full_path = getattr(folder_paths, "get_full_path", None)
+                    if callable(get_full_path) and list_key:
+                        full_path = get_full_path(list_key, name)
+                except Exception:
+                    full_path = None
+                if full_path:
+                    try:
+                        stat = os.stat(full_path)
+                        entry['size'] = stat.st_size
+                        entry['modified'] = stat.st_mtime
+                    except (OSError, IOError):
+                        pass
+                all_files.append(entry)
 
-                        # Check if it's a file (not directory)
-                        if not os.path.isfile(filepath):
-                            continue
-
-                        # Check extension
-                        _, ext = os.path.splitext(filename)
-                        if ext.lower() not in supported_extensions and supported_extensions != {""}:
-                            continue
-
-                        # Get file stats
-                        try:
-                            stat = os.stat(filepath)
-                            file_info = {
-                                'name': filename,
-                                'path': filepath,
-                                'relative_path': os.path.relpath(filepath, folder_path),
-                                'extension': ext.lower(),
-                                'size': stat.st_size,
-                                'modified': stat.st_mtime
-                            }
-                            all_files.append(file_info)
-                        except (OSError, IOError):
-                            # Skip files we can't stat
-                            continue
-
-                except (OSError, IOError) as e:
-                    print(f"Warning: Could not read folder {folder_path}: {e}")
-                    continue
-
-            # Sort files by name
             all_files.sort(key=lambda x: x['name'].lower())
-
             return {'files': all_files, 'total': len(all_files)}
 
         except Exception as e:
