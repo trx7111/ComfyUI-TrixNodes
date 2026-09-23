@@ -3556,6 +3556,31 @@ const _SuperLoraNode = class _SuperLoraNode {
       SuperLoraDOMRenderer.mount(this, WidgetAPI$1);
     };
 
+    const originalOnSerialize = nodeType.prototype.onSerialize;
+    nodeType.prototype.onSerialize = function(data) {
+      if (originalOnSerialize) {
+        originalOnSerialize.apply(this, arguments);
+      }
+      try {
+        const payload = _SuperLoraNode.serializeCustomWidgets(this);
+        if (payload) {
+          data.customWidgets = payload;
+        }
+      } catch {
+      }
+    };
+    const originalOnConfigure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function(info) {
+      if (originalOnConfigure) {
+        originalOnConfigure.apply(this, arguments);
+      }
+      try {
+        if (info && info.customWidgets) {
+          _SuperLoraNode.deserializeCustomWidgets(this, info.customWidgets);
+        }
+      } catch {
+      }
+    };
     const originalOnDrawForeground = nodeType.prototype.onDrawForeground;
     nodeType.prototype.onDrawForeground = function(ctx) {
       if (originalOnDrawForeground) {
@@ -3827,8 +3852,9 @@ const _SuperLoraNode = class _SuperLoraNode {
       if (originalConfigure) {
         originalConfigure.call(this, data);
       }
-      if (data.customWidgets) {
-        _SuperLoraNode.deserializeCustomWidgets(this, data.customWidgets);
+      const restoredCustomWidgets = data.customWidgets || data?.extensions?.customWidgets;
+      if (restoredCustomWidgets) {
+        _SuperLoraNode.deserializeCustomWidgets(this, restoredCustomWidgets);
       } else {
         _SuperLoraNode.setupAdvancedNode(this);
       }
