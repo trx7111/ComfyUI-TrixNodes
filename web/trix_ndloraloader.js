@@ -913,7 +913,8 @@ class OverlayService {
       if (!tokens.length) return true;
       const label = (item.label || "").toLowerCase();
       const path = (item.id || "").toLowerCase();
-      return tokens.every((token) => label.includes(token) || path.includes(token));
+      const pathAlt = path.replace(/\\/g, "/");
+      return tokens.every((token) => label.includes(token) || path.includes(token) || pathAlt.includes(token));
     };
     const getFilteredItems = () => {
       const query = (search.value || "").trim().toLowerCase();
@@ -1897,8 +1898,9 @@ const _FilePickerService = class _FilePickerService {
       const data = await response.json();
       const files = data.files?.map((file) => {
         const relativePath = file.relative_path || file.path;
+        const rawValue = typeof file.value === "string" && file.value ? file.value : relativePath;
         return {
-          id: relativePath,
+          id: rawValue,
           label: file.name.replace(/\.(ckpt|pt|pt2|bin|pth|safetensors|pkl|sft|gguf)$/i, ""),
           path: relativePath,
           fullPath: file.path,
@@ -4951,31 +4953,70 @@ const _NodeEnhancerExtension = class _NodeEnhancerExtension {
       return false;
     }
   }
+  static getComboValueList(widget) {
+    const opts = widget?.options?.values;
+    try {
+      if (Array.isArray(opts)) {
+        return opts.filter((entry) => typeof entry === "string");
+      }
+      if (opts && typeof opts === "object") {
+        return Object.keys(opts).filter((key) => typeof key === "string");
+      }
+      if (typeof opts === "function") {
+        const resolved = opts();
+        if (Array.isArray(resolved)) {
+          return resolved.filter((entry) => typeof entry === "string");
+        }
+      }
+    } catch {
+    }
+    return null;
+  }
   static normalizeValueForWidget(widget, value) {
     if (!widget || typeof value !== "string") {
       return value;
     }
-    const sample = (() => {
-      const opts = widget.options?.values;
-      if (Array.isArray(opts)) {
-        return opts.find((entry) => typeof entry === "string");
-      }
-      if (opts && typeof opts === "object") {
-        return Object.keys(opts).find((key) => typeof key === "string");
-      }
-      return void 0;
-    })();
-    if (typeof sample === "string") {
-      const prefersBackslash = sample.includes("\\") && !sample.includes("/");
-      const prefersSlash = sample.includes("/") && !sample.includes("\\");
-      if (prefersBackslash) {
-        return value.replace(/\//g, "\\");
-      }
-      if (prefersSlash) {
-        return value.replace(/\\/g, "/");
-      }
+    const candidates = this.getComboValueList(widget);
+    if (!candidates || !candidates.length) {
+      return value;
+    }
+    if (candidates.includes(value)) {
+      return value;
+    }
+    const listHasBackslash = candidates.some((entry) => entry.includes("\\"));
+    const listHasSlash = candidates.some((entry) => entry.includes("/"));
+    const valueHasBackslash = value.includes("\\");
+    const valueHasSlash = value.includes("/");
+    if (valueHasSlash && !valueHasBackslash && listHasBackslash && !listHasSlash) {
+      return value.replace(/\//g, "\\");
+    }
+    if (valueHasBackslash && !valueHasSlash && listHasSlash && !listHasBackslash) {
+      return value.replace(/\\/g, "/");
     }
     return value;
+  }
+  static healComboValueFromList(widget) {
+    try {
+      if (!widget || typeof widget.value !== "string" || !widget.value) {
+        return false;
+      }
+      const candidates = this.getComboValueList(widget);
+      if (!candidates || !candidates.length) {
+        return false;
+      }
+      if (candidates.includes(widget.value)) {
+        return false;
+      }
+      const normKey = (s) => String(s).replace(/\\/g, "/").toLowerCase();
+      const wanted = normKey(widget.value);
+      const match = candidates.find((entry) => normKey(entry) === wanted);
+      if (match && match !== widget.value) {
+        widget.value = match;
+        return true;
+      }
+    } catch {
+    }
+    return false;
   }
   static isGloballyEnabled() {
     try {
@@ -5453,6 +5494,17 @@ const _NodeEnhancerExtension = class _NodeEnhancerExtension {
         } else {
           _NodeEnhancerExtension.disableConfigsForNode(this, configs);
           _NodeEnhancerExtension.restoreTitle(this);
+        }
+        for (const healCfg of configs) {
+          const healWidget = this.widgets?.find((w) => w.name === healCfg.widgetName);
+          if (!healWidget) continue;
+          if (_NodeEnhancerExtension.healComboValueFromList(healWidget)) {
+            const healedMeta = this.__ndEnhancedWidgets?.[healCfg.widgetName];
+            if (healedMeta?.overlay) {
+              healedMeta.overlay.updateDisplay(healWidget.value, healWidget.value);
+            }
+            this.setDirtyCanvas?.(true, true);
+          }
         }
         _NodeEnhancerExtension.setNodeFlag(this, !!this.__ndPowerEnabled);
       } catch {

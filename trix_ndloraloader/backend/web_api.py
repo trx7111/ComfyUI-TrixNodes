@@ -70,6 +70,7 @@ async def get_files(request):
                 continue
             entry = {
                 "name": base,
+                "value": name,
                 "path": relative,
                 "relative_path": relative,
                 "extension": ext.lower(),
