@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-trixnodes"
 description = "An elegant, premium workflow management suite with bypassers, LoRA loader, color match, and prompt AIO nodes for ComfyUI."
-version = "1.9.1"
+version = "1.9.2"
 license = { file = "LICENSE.txt" }
 dependencies = [
     "ctranslate2>=3.17.0",
